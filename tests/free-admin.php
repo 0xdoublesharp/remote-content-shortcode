@@ -346,7 +346,7 @@ $tests['Pro overview is restrained, accurate and makes no background requests'] 
 			$html = $page( $tab );
 			rcs_free_assert( 1 === substr_count( $html, 'id="rcs-pro-overview"' ) && str_contains( $html, 'aria-labelledby="rcs-pro-heading"' ), 'Expected one accessible Pro overview on the plugin page.' );
 			rcs_free_assert( str_contains( $html, 'OAuth' ) && str_contains( $html, 'Scheduled refreshes' ) && str_contains( $html, 'JSON templates' ) && str_contains( $html, 'remain included in Free' ), 'Pro overview obscures the Free/Pro feature boundary.' );
-			rcs_free_assert( str_contains( $html, 'https://github.com/doublesharp/remote-content-shortcode#remote-content-shortcode-pro' ) && str_contains( $html, 'button button-secondary' ), 'Pro details do not have a quiet, working destination.' );
+			rcs_free_assert( str_contains( $html, 'https://github.com/0xdoublesharp/remote-content-shortcode#remote-content-shortcode-pro' ) && str_contains( $html, 'button button-secondary' ), 'Pro details do not have a quiet, working destination.' );
 			if ( in_array( $tab, array( 'builder', 'connections', 'cache' ), true ) ) { rcs_free_assert( strpos( $html, 'id="rcs-pro-overview"' ) > strrpos( $html, '</form>' ), 'Promotion interrupted the Free controls.' ); }
 		}
 		rcs_free_assert( 0 === $requests, 'Pro overview phoned home while rendering.' );

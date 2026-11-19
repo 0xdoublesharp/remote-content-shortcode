@@ -149,7 +149,7 @@ Follow docs/upgrading.md in the installed plugin or the GitHub repository. Check
 
 = How do I report a security issue? =
 
-Use the private vulnerability reporting form at https://github.com/doublesharp/remote-content-shortcode/security/advisories/new. Include a minimal proof of concept using test data, affected versions, and required permissions. Do not post live credentials or exploit details in public issues. See SECURITY.md in the plugin for details.
+Use the private vulnerability reporting form at https://github.com/0xdoublesharp/remote-content-shortcode/security/advisories/new. Include a minimal proof of concept using test data, affected versions, and required permissions. Do not post live credentials or exploit details in public issues. See SECURITY.md in the plugin for details.
 
 = Can I import private intranet content or execute remote scripts? =
 
