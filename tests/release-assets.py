@@ -38,7 +38,7 @@ if sys.argv[1:3] == ['release', 'upload'] and os.environ.get('RCS_GH_UPLOAD_FAIL
 ''')
         gh.chmod(0o700)
         self.env = os.environ | {'PATH': str(self.directory) + os.pathsep + os.environ['PATH'],
-                                 'GH_REPO': 'doublesharp/remote-content-shortcode',
+                                 'GH_REPO': '0xdoublesharp/remote-content-shortcode',
                                  'RCS_GH_LOG': str(self.log), 'RCS_GH_STATE': 'missing'}
 
     def tearDown(self):

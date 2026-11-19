@@ -2,7 +2,7 @@
 
 # Remote Content Shortcode
 
-[![Checks](https://github.com/doublesharp/remote-content-shortcode/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/doublesharp/remote-content-shortcode/actions/workflows/validate.yml)
+[![Checks](https://github.com/0xdoublesharp/remote-content-shortcode/actions/workflows/validate.yml/badge.svg?branch=main)](https://github.com/0xdoublesharp/remote-content-shortcode/actions/workflows/validate.yml)
 ![WordPress 6.6+](https://img.shields.io/badge/WordPress-6.6%2B-21759B?logo=wordpress&logoColor=white)
 ![PHP 8.2+](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php&logoColor=white)
 [![License: GPL v2 or later](https://img.shields.io/badge/License-GPL_v2_or_later-blue.svg)](LICENSE.txt)
@@ -22,7 +22,7 @@ Bring selected content from another site into WordPress. Choose the elements to 
 
 ## Quick start
 
-Download the installable `remote-content-shortcode-VERSION.zip` from [GitHub Releases](https://github.com/doublesharp/remote-content-shortcode/releases) once a release is published. Each release includes a SHA256 checksum. Upload the plugin ZIP through **Plugins → Add New → Upload Plugin**, then activate **Remote Content Shortcode**. The package includes its CSS selector dependency.
+Download the installable `remote-content-shortcode-VERSION.zip` from [GitHub Releases](https://github.com/0xdoublesharp/remote-content-shortcode/releases) once a release is published. Each release includes a SHA256 checksum. Upload the plugin ZIP through **Plugins → Add New → Upload Plugin**, then activate **Remote Content Shortcode**. The package includes its CSS selector dependency.
 
 Add a Shortcode block to a post or page:
 
@@ -215,7 +215,7 @@ Follow the [upgrade checklist](docs/upgrading.md) when moving from 1.x. For fail
 
 ## Reporting problems
 
-Use [GitHub Issues](https://github.com/doublesharp/remote-content-shortcode/issues) for general bugs, including a minimal example and the relevant plugin, WordPress, and PHP versions. Report suspected vulnerabilities privately using the instructions in [SECURITY.md](SECURITY.md).
+Use [GitHub Issues](https://github.com/0xdoublesharp/remote-content-shortcode/issues) for general bugs, including a minimal example and the relevant plugin, WordPress, and PHP versions. Report suspected vulnerabilities privately using the instructions in [SECURITY.md](SECURITY.md).
 
 ## License
 
