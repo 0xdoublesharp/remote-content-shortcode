@@ -30,6 +30,8 @@ class Remote_Content_Shortcode_Transport implements WpOrg\Requests\Transport {
 				$encoding_line = true;
 				// Passing even identity to Requests would let it try to inflate the body.
 				return $length;
+			} elseif ( preg_match( '/\n[ \t]*content-encoding[ \t]*:/i', $line ) ) {
+				throw self::encoded_response_error();
 			} elseif ( $complete ) {
 				// cURL delivers chunked trailers through this callback. Keep the final headers.
 				return $length;
@@ -64,6 +66,7 @@ class Remote_Content_Shortcode_Transport implements WpOrg\Requests\Transport {
 			return $length;
 		};
 		$options['hooks']->register( 'curl.before_send', static function ( $handle ) use ( $read_header, $read_body ) {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt_array -- Configure WordPress's own cURL transport for bounded headers and streaming decompression.
 			if ( ! curl_setopt_array( $handle, array(
 				CURLOPT_HTTP_CONTENT_DECODING => false,
 				CURLOPT_HEADERFUNCTION => $read_header,

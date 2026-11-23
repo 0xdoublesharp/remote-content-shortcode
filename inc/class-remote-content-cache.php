@@ -220,9 +220,9 @@ class Remote_Content_Shortcode_Cache {
 	}
 }
 
-foreach ( array( 'added_option', 'updated_option', 'deleted_option' ) as $cache_option_hook ) {
-	add_action( $cache_option_hook, static function ( $option ) {
+foreach ( array( 'added_option', 'updated_option', 'deleted_option' ) as $remote_content_shortcode_cache_option_hook ) {
+	add_action( $remote_content_shortcode_cache_option_hook, static function ( $option ) {
 		if ( Remote_Content_Shortcode_Cache::INDEX === $option ) { Remote_Content_Shortcode_Cache::flush_runtime_cache(); }
 	} );
 }
-unset( $cache_option_hook );
+unset( $remote_content_shortcode_cache_option_hook );

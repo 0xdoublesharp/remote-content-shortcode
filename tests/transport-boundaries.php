@@ -120,6 +120,7 @@ foreach ( array( 'pre_http_request', 'requests-requests.before_request' ) as $ho
 	};
 }
 foreach ( $cases as $name => $case ) {
+	if ( class_exists( 'Remote_Content_Shortcode_Budget' ) ) { Remote_Content_Shortcode_Budget::reset(); }
 	try { $case(); echo "PASS $name\n"; }
 	catch ( Throwable $error ) { ++$failures; echo "FAIL $name: " . $error->getMessage() . "\n"; }
 }

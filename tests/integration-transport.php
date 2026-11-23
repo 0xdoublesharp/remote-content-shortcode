@@ -24,6 +24,7 @@ $check = function ( $name, $test ) use ( &$count, &$failures, &$diagnostic ) {
 	$diagnostic = null;
 	wp_cache_flush();
 	if ( class_exists( 'Remote_Content_Shortcode_Cache' ) ) { Remote_Content_Shortcode_Cache::clear(); }
+	if ( class_exists( 'Remote_Content_Shortcode_Budget' ) ) { Remote_Content_Shortcode_Budget::reset(); }
 	try {
 		if ( ! $test() ) {
 			throw new RuntimeException( 'Unexpected result.' );

@@ -129,8 +129,8 @@ class Remote_Content_Shortcode_Admin {
 		if ( 'test' === $action ) { return RemoteContentShortcode::get_instance()->diagnose( $atts, $body ); }
 		if ( 'clear' === $action ) { return RemoteContentShortcode::get_instance()->clear_cache( $atts['url'] ?? '' ); }
 		if ( 'generate' !== $action ) { return new WP_Error( 'invalid_action', __( 'Unknown action.', 'remote-content-shortcode' ) ); }
-		if ( 'POST' !== ( $atts['method'] ?? 'GET' ) ) { $body = null; }
 		if ( null !== $body && ( strlen( $body ) > 65536 || preg_match( '/\[\/?remote_content\b/i', $body ) ) ) { return new WP_Error( 'invalid_builder_body', __( 'Remove remote_content shortcode delimiters from the POST body. Use a source filter for these payloads.', 'remote-content-shortcode' ) ); }
+		if ( 'POST' !== ( $atts['method'] ?? 'GET' ) ) { $body = null; }
 		$url = wp_parse_url( $atts['url'] ?? '' );
 		if ( ! $url || isset( $url['user'] ) || isset( $url['pass'] ) || ! in_array( $url['scheme'] ?? '', array( 'https', 'http' ), true ) || empty( $url['host'] ) ) { return new WP_Error( 'invalid_url' ); }
 		$shortcode = '[remote_content decode_atts="true"';
@@ -405,20 +405,20 @@ class Remote_Content_Shortcode_Admin {
 	private static function connection_form( $alias, $row, $input = array() ) {
 		$values = self::form_values( $input, array( 'alias' => $alias, 'origin' => $row['origin'] ?? '', 'path' => $row['path'] ?? '', 'header' => $row['header'] ?? 'X-API-Key', 'auth' => $row['auth'] ?? 'bearer' ) );
 		$methods = $input ? array_values( array_intersect( array( 'GET', 'POST' ), is_array( $input['methods'] ?? null ) ? array_filter( $input['methods'], 'is_string' ) : array() ) ) : ( $row['methods'] ?? array( 'GET' ) );
-		$prefix = 'rcs-connection-' . $alias . '-';
+		$suffix = '' === $alias ? '' : '-' . $alias;
 		$has_secret = ! empty( $row['has_secret'] );
 		echo '<form method="post" class="rcs-settings-form">'; self::connection_nonce(); echo '<table class="form-table">';
 		$labels = array( 'alias' => __( 'Alias', 'remote-content-shortcode' ), 'origin' => __( 'HTTPS origin', 'remote-content-shortcode' ), 'path' => __( 'Exact endpoint path', 'remote-content-shortcode' ), 'header' => __( 'API key header', 'remote-content-shortcode' ) );
 		foreach ( $labels as $key => $label ) {
-			$id = $prefix . $key;
+			$id = 'rcs-connection-' . $key . $suffix;
 			echo '<tr><th><label for="' . esc_attr( $id ) . '">' . esc_html( $label ) . '</label></th><td><input type="text" class="regular-text" id="' . esc_attr( $id ) . '" name="' . esc_attr( $key ) . '" value="' . esc_attr( $values[ $key ] ) . '"' . ( 'alias' === $key && '' !== $alias ? ' readonly' : '' ) . ' aria-describedby="' . esc_attr( $id . '-help' ) . '"><p class="description" id="' . esc_attr( $id . '-help' ) . '">' . esc_html( self::field_help( $key ) ) . '</p></td></tr>';
 		}
-		$auth_id = $prefix . 'auth';
+		$auth_id = 'rcs-connection-auth' . $suffix;
 		echo '<tr><th><label for="' . esc_attr( $auth_id ) . '">' . esc_html__( 'Authentication', 'remote-content-shortcode' ) . '</label></th><td><select name="auth" id="' . esc_attr( $auth_id ) . '" aria-describedby="' . esc_attr( $auth_id . '-help' ) . '">';
 		foreach ( array( 'basic' => 'Basic', 'bearer' => 'Bearer', 'api_key' => 'API key' ) as $key => $label ) { echo '<option value="' . esc_attr( $key ) . '"' . selected( $values['auth'], $key, false ) . '>' . esc_html( $label ) . '</option>'; }
 		echo '</select><p class="description" id="' . esc_attr( $auth_id . '-help' ) . '">' . esc_html( self::field_help( 'auth' ) ) . '</p></td></tr><tr><th>' . esc_html__( 'Allowed methods', 'remote-content-shortcode' ) . '</th><td>';
 		foreach ( array( 'GET', 'POST' ) as $method ) { echo '<label><input type="checkbox" name="methods[]" value="' . esc_attr( $method ) . '"' . checked( in_array( $method, $methods, true ), true, false ) . '> ' . esc_html( $method ) . '</label> '; }
-		$secret_id = $prefix . 'secret';
+		$secret_id = 'rcs-connection-secret' . $suffix;
 		echo '<p class="description">' . esc_html( self::field_help( 'methods' ) ) . '</p></td></tr><tr><th><label for="' . esc_attr( $secret_id ) . '">' . esc_html__( 'Secret', 'remote-content-shortcode' ) . '</label></th><td><input type="password" autocomplete="new-password" name="secret" value="" id="' . esc_attr( $secret_id ) . '" aria-describedby="' . esc_attr( $secret_id . '-help' ) . '"><p class="description" id="' . esc_attr( $secret_id . '-help' ) . '">' . esc_html__( 'Basic uses username:password. For Bearer or API key, enter the token only. Leave blank to keep an existing secret.', 'remote-content-shortcode' ) . '</p>';
 		if ( '' !== $alias ) { echo '<p class="rcs-secret-status">' . esc_html( $has_secret ? __( 'Saved secret present', 'remote-content-shortcode' ) : __( 'No secret saved', 'remote-content-shortcode' ) ) . '</p>'; }
 		if ( $has_secret ) { echo '<label><input type="checkbox" name="delete_secret" value="1"> ' . esc_html__( 'Remove saved secret', 'remote-content-shortcode' ) . '</label>'; }
@@ -442,7 +442,7 @@ class Remote_Content_Shortcode_Admin {
 		$placeholders = implode( ',', array_fill( 0, count( $types ), '%s' ) );
 		// Fetch one extra row instead of counting all matches.
 		$shortcode = '%' . $wpdb->esc_like( '[remote_content' ) . '%'; $block = '%' . $wpdb->esc_like( '<!-- wp:remote-content-shortcode/remote-content' ) . '%';
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- The interpolated list contains only %s placeholders. Read IDs and titles without fetching remote content.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching, WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- The interpolated list contains only %s placeholders matching the prepared array. Read IDs and titles without fetching remote content.
 		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT ID, post_title, post_type, post_status FROM {$wpdb->posts} WHERE post_type IN ($placeholders) AND post_status NOT IN ('auto-draft','trash','inherit') AND (post_content LIKE %s OR post_content LIKE %s) ORDER BY ID ASC LIMIT 21 OFFSET %d", array_merge( $types, array( $shortcode, $block, ( $page - 1 ) * 20 ) ) ) );
 		$rows = is_array( $rows ) ? $rows : array();
 		echo '<h2>' . esc_html__( 'Usage', 'remote-content-shortcode' ) . '</h2><p>' . esc_html__( 'Find remote content shortcodes and blocks in posts, pages, public custom post types, synced patterns, templates, and template parts. Open an item to review or edit its imports.', 'remote-content-shortcode' ) . '</p><div class="rcs-table-scroll"><table class="widefat striped rcs-usage-table"><thead><tr><th scope="col" class="rcs-usage-title">' . esc_html__( 'Title', 'remote-content-shortcode' ) . '</th><th scope="col" class="rcs-usage-type">' . esc_html__( 'Content type', 'remote-content-shortcode' ) . '</th><th scope="col" class="rcs-usage-status">' . esc_html__( 'Status', 'remote-content-shortcode' ) . '</th><th scope="col" class="rcs-usage-actions">' . esc_html__( 'Actions', 'remote-content-shortcode' ) . '</th></tr></thead><tbody>';
@@ -468,8 +468,13 @@ class Remote_Content_Shortcode_Admin {
 		}
 		if ( ! $rows ) { echo '<tr><td colspan="4"><p><strong>' . esc_html__( 'No matching content on this page.', 'remote-content-shortcode' ) . '</strong></p><p>' . esc_html__( 'Add a Remote content block or shortcode to find it here.', 'remote-content-shortcode' ) . '</p></td></tr>'; }
 		echo '</tbody></table></div><div class="rcs-usage-footer"><span class="rcs-usage-meta">';
-		if ( $rows ) { echo esc_html( sprintf( __( 'Showing %1$d–%2$d · Page %3$d', 'remote-content-shortcode' ), ( $page - 1 ) * 20 + 1, ( $page - 1 ) * 20 + min( 20, count( $rows ) ), $page ) ); }
-		else { echo esc_html( sprintf( __( 'Page %d', 'remote-content-shortcode' ), $page ) ); }
+		if ( $rows ) {
+			/* translators: 1: First row number, 2: Last row number, 3: Page number. */
+			echo esc_html( sprintf( __( 'Showing %1$d–%2$d · Page %3$d', 'remote-content-shortcode' ), ( $page - 1 ) * 20 + 1, ( $page - 1 ) * 20 + min( 20, count( $rows ) ), $page ) );
+		} else {
+			/* translators: %d: Page number. */
+			echo esc_html( sprintf( __( 'Page %d', 'remote-content-shortcode' ), $page ) );
+		}
 		echo '</span><nav class="rcs-form-actions" aria-label="' . esc_attr__( 'Usage pagination', 'remote-content-shortcode' ) . '">';
 		foreach ( array( -1 => __( 'Previous', 'remote-content-shortcode' ), 1 => __( 'Next', 'remote-content-shortcode' ) ) as $step => $label ) {
 			if ( ( -1 === $step && $page > 1 ) || ( 1 === $step && count( $rows ) > 20 && $page < 10000 ) ) { echo '<a class="button" href="' . esc_url( add_query_arg( array( 'page' => 'remote-content-shortcode', 'tab' => 'usage', 'usage_page' => $page + $step ), admin_url( 'tools.php' ) ) ) . '">' . esc_html( $label ) . '</a>'; }

@@ -56,9 +56,11 @@ $tests['connection mutations validate secrets scopes and nonce types'] = static 
 	rcs_fp_assert( 'platform-fixture' === Remote_Content_Shortcode_Connections::save( $input ), 'Canonical scope rejected.' );
 	$all = Remote_Content_Shortcode_Connections::all();
 	rcs_fp_assert( 'https://example.com' === $all['platform-fixture']['origin'] && array( 'GET' ) === $all['platform-fixture']['methods'], 'Scope was not normalized.' );
-	$input['origin'] = 'https://example.com:8443'; $input['methods'] = array( 'GET', 'POST' );
+	$input['origin'] = 'https://example.com:8080'; $input['methods'] = array( 'GET', 'POST' );
 	rcs_fp_assert( 'platform-fixture' === Remote_Content_Shortcode_Connections::save( $input ), 'Explicit HTTPS port configuration rejected.' );
-	$all = Remote_Content_Shortcode_Connections::all(); rcs_fp_assert( 'https://example.com:8443' === $all['platform-fixture']['origin'], 'Explicit origin port was lost.' );
+	$all = Remote_Content_Shortcode_Connections::all(); rcs_fp_assert( 'https://example.com:8080' === $all['platform-fixture']['origin'], 'Explicit origin port was lost.' );
+	$input['origin'] = 'https://example.com:8443';
+	rcs_fp_error( Remote_Content_Shortcode_Connections::save( $input ), 'invalid_origin' );
 };
 $tests['configured aliases reveal names only and malformed filters fail closed'] = static function () {
 	rcs_fp_assert( 'php-defined' === Remote_Content_Shortcode_Connections::save( rcs_fp_fixture( 'php-defined' ) ), 'Could not seed a managed alias for PHP override.' );
@@ -228,6 +230,7 @@ $old_options = array(); foreach ( array( Remote_Content_Shortcode_Connections::O
 $admin = get_user_by( 'login', 'rcs_admin' ); $admin_id = $admin ? $admin->ID : 1; $failures = 0;
 try {
 	foreach ( $tests as $name => $test ) {
+		if ( class_exists( 'Remote_Content_Shortcode_Budget' ) ) { Remote_Content_Shortcode_Budget::reset(); }
 		wp_set_current_user( $admin_id ); delete_option( Remote_Content_Shortcode_Connections::OPTION );
 		try { $test(); echo "PASS $name\n"; } catch ( Throwable $error ) { ++$failures; echo "FAIL $name: " . $error->getMessage() . "\n"; }
 	}
