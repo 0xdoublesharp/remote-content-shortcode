@@ -211,6 +211,18 @@ $cb_cases['HTML reports zero matches and removes overlapping ancestors'] = funct
 	cb_check( array( 'matches' => 0 ) === $selection, 'Missing selector did not record zero matches' );
 	cb_check( '<p>keep</p>' === Remote_Content_Shortcode_HTML::transform( '<div><span>gone</span></div><p>keep</p>', 'p', 'div,span' ), 'Overlapping removal changed surviving node' );
 };
+$cb_cases['HTML removes spaced selector groups within the step budget'] = function () {
+	$html = '<main><header>gone</header><footer>gone</footer><nav>gone</nav><aside>gone</aside><script>gone</script><style>gone</style><div class="sidebar">gone</div><div class="ads">gone</div><div class="comments">gone</div><p>keep</p></main>';
+	$remove = 'header, footer, nav, aside, script, style, .sidebar, .ads, .comments';
+	cb_check( '<main><p>keep</p></main>' === Remote_Content_Shortcode_HTML::transform( $html, 'main', $remove ), 'Spaced removal groups did not preserve the surviving content' );
+	cb_error( Remote_Content_Shortcode_HTML::transform( $html, 'main', $remove . str_repeat( ', article', 8 ) ), 'selector_too_complex' );
+};
+$cb_cases['HTML selection and URL rewriting strip a leading UTF-8 BOM'] = function () {
+	$html = '<p>café <a href="next">next</a></p>';
+	$with_bom = "\xEF\xBB\xBF" . $html;
+	cb_check( Remote_Content_Shortcode_HTML::transform( $html, '', '' ) === Remote_Content_Shortcode_HTML::transform( $with_bom, '', '' ), 'HTML serialization retained the BOM' );
+	cb_check( '<p>café <a href="https://example.com/next">next</a></p>' === Remote_Content_Shortcode_URLs::rewrite( $with_bom, 'https://example.com/page' ), 'URL rewriting retained the BOM or changed UTF-8 content' );
+};
 $cb_cases['HTML handles an empty document and strips encoding instructions'] = function () {
 	$out = Remote_Content_Shortcode_HTML::transform( '<!DOCTYPE html>', '', '' );
 	cb_check( is_string( $out ) && str_contains( $out, '<!DOCTYPE html>' ) && ! str_contains( $out, '<?xml' ), 'Empty document serialization failed' );

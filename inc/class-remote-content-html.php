@@ -23,6 +23,9 @@ spl_autoload_register( static function ( $class ) {
 class Remote_Content_Shortcode_HTML {
 	public static function transform( $html, $selector, $remove, &$selection = null ) {
 		$selection = array( 'matches' => null );
+		if ( str_starts_with( $html, "\xEF\xBB\xBF" ) ) {
+			$html = substr( $html, 3 );
+		}
 		if ( '' === $html ) {
 			return '';
 		}
@@ -62,9 +65,14 @@ class Remote_Content_Shortcode_HTML {
 				if ( '' === $expression ) {
 					continue;
 				}
-				// Conservatively count combinators, groups and pseudo-classes, even inside literals.
-				$steps = 1 + preg_match_all( '/[\s>+~,:()]/', $expression );
-				if ( strlen( $expression ) > 256 || $steps > 16 ) {
+				if ( strlen( $expression ) > 256 ) {
+					return new WP_Error( 'selector_too_complex' );
+				}
+				// Count whitespace once, ignoring padding at separators while preserving descendant combinators.
+				$normalized = preg_replace( '/\s+/', ' ', trim( $expression ) );
+				$normalized = preg_replace( '/ ?([,>+~]) ?|(?<=[:(]) | (?=\))/', '$1', $normalized );
+				$steps = 1 + preg_match_all( '/[ >+~,:()]/', $normalized );
+				if ( $steps > 16 ) {
 					return new WP_Error( 'selector_too_complex' );
 				}
 				$query = $converter->toXPath( $expression );
@@ -91,8 +99,9 @@ class Remote_Content_Shortcode_HTML {
 					return new WP_Error( 'invalid_selector' );
 				}
 				foreach ( iterator_to_array( $nodes ) as $node ) {
-					// CSS queries return elements. Descendants keep their parent even after an ancestor is removed.
-					$node->parentNode->removeChild( $node );
+					if ( $node->parentNode ) {
+						$node->parentNode->removeChild( $node );
+					}
 				}
 			}
 			if ( '' !== $selector ) {

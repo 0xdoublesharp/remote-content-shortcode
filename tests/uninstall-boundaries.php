@@ -7,6 +7,7 @@ $valid = 'rcs_v2_' . hash( 'sha256', 'uninstall-boundary' );
 set_transient( $valid, 'owned', 120 );
 update_option( 'rcs_connections_v1', array( 'owned' => 'sealed-credential' ), false );
 update_option( 'rcs_connections_v1_lock', ( time() + 60 ) . ':uninstall-fixture', false );
+update_option( 'rcs_resource_origins_v1', array( 'https://images.example.com' ), false );
 update_option( 'php_external_credentials', 'preserved', false );
 set_transient( 'uninstall_other_plugin', 'preserved', 120 );
 update_option( 'rcs_v2_cache_index', array( $valid => array(), 'uninstall_other_plugin' => array(), 7 => array() ), false );
@@ -16,6 +17,7 @@ define( 'WP_UNINSTALL_PLUGIN', 'remote-content-shortcode/remote-content-shortcod
 require $root . '/uninstall.php';
 ub_assert( false === get_option( 'rcs_connections_v1', false ), 'Managed connections survived uninstall.' );
 ub_assert( false === get_option( 'rcs_connections_v1_lock', false ), 'Connection mutation lock survived uninstall.' );
+ub_assert( false === get_option( 'rcs_resource_origins_v1', false ), 'Trusted image origins survived uninstall.' );
 ub_assert( 'preserved' === get_option( 'php_external_credentials' ), 'Externally configured credential storage was removed.' );
 delete_option( 'php_external_credentials' );
 ub_assert( false === get_transient( $valid ), 'Indexed payload survived uninstall.' );
@@ -53,4 +55,4 @@ try {
 remote_content_shortcode_uninstall_cache_site();
 for ( $i = 0; $i < 100; ++$i ) { ub_assert( null === $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $blocked_prefix . $i ) ), 'Retry did not remove a previously blocked database row.' ); }
 delete_transient( 'uninstall_other_plugin' );
-echo "PASS uninstall orphan batches, invalid IDs, malformed index, blocked deletion termination, retry, and unrelated data preservation\n";
+echo "PASS uninstall orphan batches, invalid IDs, malformed index, blocked deletion termination, retry, trusted image origins, and unrelated data preservation\n";

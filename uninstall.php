@@ -1,5 +1,5 @@
 <?php
-/** Remove Remote Content Shortcode's cache and administrator-managed connections. */
+/** Remove Remote Content Shortcode's cache, connections and trusted image origins. */
 if ( ! defined( 'WP_UNINSTALL_PLUGIN' ) ) { exit; }
 
 /** Backend changes can leave transient rows behind, so remove both representations. */
@@ -29,6 +29,7 @@ function remote_content_shortcode_uninstall_cache_site() {
 	for ( $slot = 0; $slot < 4; ++$slot ) { delete_option( 'rcs_v3_fetch_slot_' . $slot ); }
 	delete_option( 'rcs_connections_v1' );
 	delete_option( 'rcs_connections_v1_lock' );
+	delete_option( 'rcs_resource_origins_v1' );
 }
 
 if ( is_multisite() ) {

@@ -5,6 +5,7 @@ class Remote_Content_Shortcode_URLs {
 	public static function rewrite( $html, $effective_url ) {
 		if ( ! is_string( $html ) || strlen( $html ) > 1048576 || substr_count( $html, '<' ) > 20000 ) { return new WP_Error( 'html_too_complex' ); }
 		if ( ! is_string( $effective_url ) || strlen( $effective_url ) > 8192 || ! self::http_url( $effective_url ) ) { return new WP_Error( 'invalid_url_base' ); }
+		if ( str_starts_with( $html, "\xEF\xBB\xBF" ) ) { $html = substr( $html, 3 ); }
 		if ( '' === $html ) { return ''; }
 		$previous = libxml_use_internal_errors( true );
 		try {

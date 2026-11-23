@@ -82,14 +82,18 @@ class Remote_Content_Shortcode_Connections {
 	private static function scope( $input ) {
 		foreach ( array( 'auth', 'origin', 'path' ) as $key ) { if ( ! is_string( $input[ $key ] ?? null ) ) { return new WP_Error( 'invalid_scope' ); } }
 		$origin = wp_parse_url( $input['origin'] ); $path = $input['path']; $methods = $input['methods'] ?? null;
-		if ( ! $origin || 'https' !== ( $origin['scheme'] ?? '' ) || empty( $origin['host'] ) || isset( $origin['user'] ) || isset( $origin['pass'] ) || isset( $origin['query'] ) || isset( $origin['fragment'] ) || ! in_array( $origin['path'] ?? '', array( '', '/' ), true ) || strlen( $input['origin'] ) > 512 || preg_match( '/[\x00-\x20\\\\]/', $input['origin'] ) ) { return new WP_Error( 'invalid_origin' ); }
+		if ( ! $origin || 'https' !== strtolower( $origin['scheme'] ?? '' ) || empty( $origin['host'] ) || isset( $origin['user'] ) || isset( $origin['pass'] ) || isset( $origin['query'] ) || isset( $origin['fragment'] ) || ! in_array( $origin['path'] ?? '', array( '', '/' ), true ) || strlen( $input['origin'] ) > 512 || preg_match( '/[\x00-\x20\\\\]/', $input['origin'] ) ) { return new WP_Error( 'invalid_origin' ); }
+		$port = (int) ( $origin['port'] ?? 443 );
+		if ( ! in_array( $port, array( 443, 8080 ), true ) ) { return new WP_Error( 'invalid_origin' ); }
+		try { $host = WpOrg\Requests\IdnaEncoder::encode( strtolower( $origin['host'] ) ); }
+		catch ( Throwable $error ) { return new WP_Error( 'invalid_origin' ); }
 		if ( '' === $path || strlen( $path ) > 2048 || '/' !== $path[0] || preg_match( '/[?#\\\\\x00-\x20]|%(?:2e|2f|5c|25)|(?:^|\/)\.{1,2}(?:\/|$)/i', $path ) || str_contains( $path, '//' ) ) { return new WP_Error( 'invalid_path' ); }
 		if ( ! is_array( $methods ) || ! $methods || count( $methods ) > 2 ) { return new WP_Error( 'invalid_methods' ); }
 		foreach ( $methods as $method ) { if ( ! is_string( $method ) || ! in_array( $method, array( 'GET', 'POST' ), true ) ) { return new WP_Error( 'invalid_methods' ); } }
 		$auth = $input['auth']; $header = $input['header'] ?? 'X-API-Key';
 		if ( ! in_array( $auth, array( 'basic', 'bearer', 'api_key' ), true ) ) { return new WP_Error( 'invalid_auth' ); }
 		if ( 'api_key' === $auth && ( ! is_string( $header ) || strlen( $header ) > 64 || ! preg_match( '/^(?:X-[A-Za-z0-9-]+|Api-Key)$/iD', $header ) || preg_match( '/^X-(?:Forwarded(?:-|$)|Original(?:-|$)|Rewrite(?:-|$)|HTTP-Method(?:-|$)|Method-Override$|(?:Real|Client|Originating|Cluster-Client|True-Client|Connecting|CF-Connecting)-IP$|Remote-(?:Addr|IP)$|Via$|Host$|Cookie$|Proxy(?:-|$))/i', $header ) ) ) { return new WP_Error( 'invalid_header' ); }
-		return array( 'auth' => $auth, 'origin' => 'https://' . strtolower( $origin['host'] ) . ( isset( $origin['port'] ) && 443 !== $origin['port'] ? ':' . $origin['port'] : '' ), 'path' => $path, 'methods' => array_values( array_unique( $methods ) ), 'header' => 'api_key' === $auth ? $header : 'X-API-Key' );
+		return array( 'auth' => $auth, 'origin' => 'https://' . $host . ( 443 !== $port ? ':' . $port : '' ), 'path' => $path, 'methods' => array_values( array_unique( $methods ) ), 'header' => 'api_key' === $auth ? $header : 'X-API-Key' );
 	}
 	public static function definitions( $sources ) {
 		$sources = is_array( $sources ) ? $sources : array();
@@ -146,9 +150,9 @@ class Remote_Content_Shortcode_Connections {
 			return self::write( $rows, $token ) ? $alias : new WP_Error( 'connection_storage_failed' );
 		} finally { self::unlock( $token ); }
 	}
-	public static function delete( $alias ) {
+	public static function delete( $alias, $input = null ) {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- authorized() verifies the connection nonce and administrator capability.
-		$authorized = self::authorized( $_REQUEST ); if ( is_wp_error( $authorized ) ) { return $authorized; }
+		$authorized = self::authorized( $input ?? wp_unslash( $_REQUEST ) ); if ( is_wp_error( $authorized ) ) { return $authorized; }
 		if ( ! self::alias_valid( $alias ) ) { return new WP_Error( 'invalid_alias' ); }
 		if ( self::code_alias( $alias ) ) { return new WP_Error( 'read_only_alias' ); }
 		$token = self::lock(); if ( false === $token ) { return new WP_Error( 'connection_busy' ); }
