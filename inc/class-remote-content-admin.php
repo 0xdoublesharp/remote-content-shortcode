@@ -218,16 +218,6 @@ class Remote_Content_Shortcode_Admin {
 			'testComplete' => __( 'Preview and shortcode updated.', 'remote-content-shortcode' ), 'generated' => __( 'Shortcode updated. Your preview is kept.', 'remote-content-shortcode' ),
 			'networkError' => __( 'The request could not be completed. Your settings are kept. Try again, or reload if your WordPress session has expired.', 'remote-content-shortcode' ),
 		) );
-		// The workspace script sets every copied-in shortcode panel to ready before emitting this event.
-		wp_add_inline_script( 'remote-content-shortcode-workspace', <<<'JS'
-document.addEventListener('rcs:output', function () {
-    var panel = document.getElementById('rcs-shortcode-panel');
-    if (panel && document.querySelector('#rcs-editor-feedback .notice-error')) {
-        panel.dataset.state = 'unverified';
-    }
-});
-JS
-		);
 		$test = 'test' === ( $input['rcs_action'] ?? '' );
 		$tested = $test && is_array( $result );
 		$ok = $tested && ! empty( $result['ok'] );
@@ -386,6 +376,7 @@ JS
 		echo '<p class="description" id="' . esc_attr( $help_id ) . '">' . esc_html( self::field_help( $key ) ) . '</p></td></tr>';
 	}
 	private static function connections( $input = array() ) {
+		wp_enqueue_script( 'remote-content-shortcode-admin', plugins_url( 'admin.js', __FILE__ ), array(), (string) filemtime( __DIR__ . '/admin.js' ), true );
 		$action = $input['connection_action'] ?? '';
 		$connection = 'save' === $action ? $input : array();
 		echo '<h2>' . esc_html__( 'Connections', 'remote-content-shortcode' ) . '</h2><p>' . esc_html__( 'Credentials apply only to the exact HTTPS origin, path and methods below. Saved secrets are encrypted with the WordPress salts. Back up those salts before changing them.', 'remote-content-shortcode' ) . '</p>';
@@ -407,7 +398,7 @@ JS
 		$value = is_string( $draft ) ? $draft : implode( "\n", Remote_Content_Shortcode_Output::stored_origins() );
 		/* translators: %d: Maximum number of trusted image origins. */
 		$description = sprintf( __( 'Remote src and poster assets are stripped by default. You can trust up to %d public HTTPS origins per site. The srcset attribute stays disabled.', 'remote-content-shortcode' ), Remote_Content_Shortcode_Output::MAX_ORIGINS );
-		echo '<h2>' . esc_html__( 'Trusted HTTPS image origins', 'remote-content-shortcode' ) . '</h2><form method="post" class="rcs-settings-form">';
+		echo '<h2>' . esc_html__( 'Trusted HTTPS image origins', 'remote-content-shortcode' ) . '</h2><form method="post" class="rcs-settings-form rcs-origins-form">';
 		self::connection_nonce();
 		echo '<p class="description" id="rcs-resource-origins-help">' . esc_html( $description ) . '</p><p><label for="rcs-resource-origins">' . esc_html__( 'HTTPS origins, one per line', 'remote-content-shortcode' ) . '</label></p><textarea class="large-text code" id="rcs-resource-origins" name="resource_origins" rows="5" aria-describedby="rcs-resource-origins-help">' . esc_textarea( $value ) . '</textarea><p><button type="submit" class="button button-primary" name="connection_action" value="save_origins">' . esc_html__( 'Save trusted image origins', 'remote-content-shortcode' ) . '</button></p></form>';
 	}

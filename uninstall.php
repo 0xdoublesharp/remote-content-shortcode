@@ -30,6 +30,8 @@ function remote_content_shortcode_uninstall_cache_site() {
 	delete_option( 'rcs_connections_v1' );
 	delete_option( 'rcs_connections_v1_lock' );
 	delete_option( 'rcs_resource_origins_v1' );
+	delete_option( 'rcs_v2_upgrade_notice_dismissed' );
+	delete_option( 'rcs_v2_upgrade_notice_checked' );
 }
 
 if ( is_multisite() ) {
