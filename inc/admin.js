@@ -2,7 +2,7 @@
 (function () {
     'use strict';
 
-    function setup() {
+    function setupCopy() {
         document.querySelectorAll('[data-rcs-copy]').forEach(function (button) {
             if (button.getAttribute('data-rcs-ready')) { return; }
             var field = document.getElementById(button.getAttribute('aria-controls'));
@@ -38,7 +38,21 @@
         });
     }
 
-    document.addEventListener('rcs:output', setup);
+    function setup() {
+        setupCopy();
+        document.querySelectorAll('select[name="auth"]').forEach(function (auth) {
+            var header = auth.form && auth.form.querySelector('input[name="header"]');
+            var row = header && header.closest('tr');
+            if (!row) { return; }
+            function updateHeader() {
+                row.classList.toggle('rcs-field-inactive', auth.value !== 'api_key');
+            }
+            auth.addEventListener('change', updateHeader);
+            updateHeader();
+        });
+    }
+
+    document.addEventListener('rcs:output', setupCopy);
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', setup);

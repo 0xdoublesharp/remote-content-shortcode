@@ -16,7 +16,7 @@
                 return pair[0] !== '_wpnonce' && pair[0] !== '_wp_http_referer';
             }));
         }
-        var previewKey = preview.querySelector('iframe') ? fingerprint() : null;
+        var previewKey = (preview.querySelector('iframe') || preview.dataset.state === 'ready') ? fingerprint() : null;
         var codeKey = output.querySelector('textarea') ? fingerprint() : null;
         function status(panel, value, state) {
             panel.dataset.state = state;
@@ -106,16 +106,18 @@
                     var content = preview.querySelector('#rcs-preview-content');
                     var incomingContent = incoming.querySelector('#rcs-preview-content');
                     var oldFrame = content.querySelector('iframe');
-                    var keepFrame = oldFrame && !incomingContent.querySelector('iframe') && incoming.dataset.state !== 'ready';
+                    var incomingFrame = incomingContent.querySelector('iframe');
+                    var keepFrame = oldFrame && !incomingFrame && incoming.dataset.state !== 'ready';
                     if (keepFrame) { oldFrame.remove(); }
                     replaceContents(content, incomingContent);
                     if (keepFrame) {
+                        oldFrame.dataset.stalePreview = 'true';
                         content.prepend(oldFrame);
                         status(preview, messages.stalePreview, 'stale');
                         previewKey = null;
                     } else {
                         status(preview, incoming.querySelector('[role="status"]').textContent, incoming.dataset.state);
-                        previewKey = content.querySelector('iframe') ? key : null;
+                        previewKey = (incomingFrame || preview.dataset.state === 'ready') ? key : null;
                     }
                 }
                 var nextCode = next.querySelector('#rcs-shortcode-panel');
@@ -123,7 +125,7 @@
                     replaceContents(output.querySelector('#rcs-shortcode-content'), nextCode.querySelector('#rcs-shortcode-content'));
                     codeKey = key;
                     var verified = previewKey === key && preview.dataset.state === 'ready';
-                    status(output, verified ? messages.ready : messages.unverified, 'ready');
+                    status(output, verified ? messages.ready : messages.unverified, verified ? 'ready' : 'unverified');
                     document.dispatchEvent(new Event('rcs:output'));
                     fitCode();
                 } else {

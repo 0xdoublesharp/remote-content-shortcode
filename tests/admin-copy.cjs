@@ -20,7 +20,7 @@ function view(clipboard) {
         addEventListener: (event, run) => { assert.equal(event, 'click'); click = run; }
     };
     vm.runInNewContext(script, { document: {
-        readyState: 'complete', querySelectorAll: () => [button],
+        readyState: 'complete', querySelectorAll: selector => selector === '[data-rcs-copy]' ? [button] : [],
         addEventListener: () => {},
         getElementById: id => ({ generated: field, status })[id]
     }, navigator: { clipboard } });
@@ -59,4 +59,28 @@ function view(clipboard) {
     assert.equal(waiting.status.textContent, 'Copied');
     assert.equal(waiting.attributes['aria-busy'], undefined);
     console.log('PASS pending copy does not duplicate writes or announce early success');
+
+    let change;
+    const classes = new Set();
+    const row = { classList: { toggle(name, enabled) { if (enabled) classes.add(name); else classes.delete(name); } } };
+    const header = { value: 'X-Custom-Key', disabled: false, closest: selector => selector === 'tr' ? row : null };
+    const auth = {
+        value: 'bearer',
+        form: { querySelector: selector => selector === 'input[name="header"]' ? header : null },
+        addEventListener(event, run) { assert.equal(event, 'change'); change = run; }
+    };
+    vm.runInNewContext(script, { document: {
+        readyState: 'complete', querySelectorAll: selector => selector === 'select[name="auth"]' ? [auth] : [],
+        addEventListener: () => {}
+    } });
+    assert(classes.has('rcs-field-inactive'));
+    auth.value = 'api_key';
+    change();
+    assert(!classes.has('rcs-field-inactive'));
+    auth.value = 'basic';
+    change();
+    assert(classes.has('rcs-field-inactive'));
+    assert.equal(header.value, 'X-Custom-Key');
+    assert.equal(header.disabled, false);
+    console.log('PASS changing authentication only dims the header row and preserves the header value');
 })().catch(error => { console.error(error); process.exitCode = 1; });
