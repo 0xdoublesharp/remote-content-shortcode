@@ -1,17 +1,17 @@
-# Upgrading from version 1.x
+# Upgrading from version 1.x to 2.0.0
 
-Version 2 changes how destinations, remote HTML, credentials, and selectors are handled. Test existing imports on a staging copy before updating a production site. Keep a backup of the site's database and plugin files.
+Version 2.0.0 changes how destinations, remote HTML, credentials, and selectors are handled. Test existing imports on a staging copy before updating a production site. Keep a backup of the site's database and plugin files.
 
 ## Before updating
 
 1. Confirm WordPress 6.6 or later and PHP 8.2 or later with DOM and cURL 7.49 or later.
-2. Find existing `remote_content` shortcodes, including widgets, templates, and reusable content. Record the public source URLs and the parts of each page the imports should display.
+2. Find existing `remote_content` shortcodes and Remote content blocks. Once the upgrade is installed on staging, the **Usage** tab can scan public post types, including custom post types, as well as synced patterns and block templates. Check widgets and PHP-generated imports separately. Record the public source URLs and the parts of each page the imports should display.
 3. Check those imports against the migration table below. Configure credential aliases in **Tools → Remote content → Connections** or trusted PHP before publishing pages that depend on them. Existing credential constants, external options and protected metadata can remain in place behind explicit PHP aliases.
 4. Choose fallback content for imports that should show a useful message during an outage.
 
 ## What needs adjustment
 
-| Existing behavior | Version 2 behavior and migration |
+| Existing behavior | Version 2.0.0 behavior and migration |
 | --- | --- |
 | Remote scripts, inline event handlers, or other executable markup | WordPress post-HTML sanitization removes them after every transformation. Use trusted local code for interactive functionality, or `htmlentities="true"` when displaying source. |
 | Local paths, `file://`, intranet URLs, or metadata addresses | Only public HTTP and HTTPS destinations are accepted. Move the intended published content to an appropriate public endpoint. |
@@ -19,11 +19,12 @@ Version 2 changes how destinations, remote HTML, credentials, and selectors are 
 | Implicit credential lookup or plaintext `userpwd` values | Save a connection with an HTTPS origin, exact endpoint path and allowed methods, or configure a PHP alias with explicit storage. See the example below. Remove passwords or tokens saved in post content and rotate exposed credentials. |
 | Credential lookup using the ambient post's metadata | Configure an explicit positive integer `post_id` and a protected metadata key that is not REST-exposed, or move the credential to a constant or option. |
 | jQuery selectors such as `p:eq(0)` | Use supported CSS, for example `p:first-of-type` when the intended match is the first `p` sibling. CSS sibling positions and jQuery result-set indexes are different, so verify the selected output. |
-| Imported relative links and images | Set `rewrite_urls="true"` for links. Browser resources require an exact trusted HTTPS-origin grant; `srcset` is disabled. See the security reference. |
-| Imported inline styles, classes or IDs | Presentation attributes are removed. Apply styling through trusted local code. |
+| Imported relative links and media | Set `rewrite_urls="true"` to resolve relative `href`, `cite`, `src`, and `poster` URLs against the final URL after redirects. Remote `src` and `poster` are stripped by default. Administrators can grant up to 16 exact public HTTPS origins in **Tools → Remote content → Connections** or with the `remote_content_shortcode_resource_origins` PHP filter. `srcset` stays disabled. |
+| Imported inline styles, classes, or IDs | The output strips `id`, `class`, and `style`. Apply styling through trusted local code. A link such as `#details` stays on the WordPress page and needs a local anchor because the remote ID has been removed. |
 | POST shortcodes | Grant repeat-safe endpoints through `remote_content_shortcode_allow_post_render`; credential method grants alone do not enable public POST rendering. |
-| Custom system resolver configuration | Define `REMOTE_CONTENT_DNS_SERVERS` with numeric resolver addresses when `/etc/resolv.conf` is unavailable. DNS shares the HTTP deadline. |
-| Compressed responses or proxy-only outbound access | Endpoints must support uncompressed responses over direct public connections. |
+| Custom system resolver configuration | DNS shares the HTTP deadline. If `/etc/resolv.conf` is unavailable or has no usable numeric resolvers, define `REMOTE_CONTENT_DNS_SERVERS` with up to three numeric resolver addresses. |
+| Compressed responses | `Content-Encoding: identity` is accepted. The transport stream-decompresses `gzip` and `deflate` under a strict 1 MiB decompressed ceiling. Unsupported encodings such as `br` and `zstd` and bodies exceeding the limit after decompression are rejected. Configure the endpoint to send a supported encoding or return a smaller fragment. |
+| Proxy-only outbound access | Imports require direct public connectivity. |
 | Very large documents, complex selectors, or unrestricted cache lifetimes | Use smaller fragments and simpler expressions. Fresh and stale lifetimes each have a maximum of one day; storage and processing have bounded limits. |
 
 ## Keep an existing shortcode with an explicit alias
@@ -56,6 +57,7 @@ Only configure endpoints whose responses are intended for the post's audience. A
 2. Visit representative pages while logged out. Confirm selection/removal, links, images, and fallback messages. Check editor previews separately because they bypass visitor caching.
 3. Clear this plugin's cache and any page/CDN caches when checking changed content.
 4. Verify authenticated imports with their configured aliases. The upgrade preserves saved posts and existing external credential storage, but does not create aliases automatically. PHP-defined aliases remain read only in Connections.
+5. If you move a GET shortcode into a Remote content block, carry over the connection alias, named query forwarding (`params`), regular expression replacement (`find`, `replace`), escaped source (`htmlentities`), and plain-text settings (`strip_tags`) as applicable. Keep POST imports in the shortcode.
 
 The shortcode, block, transformations, public GET cache, stale fallback, URL rewriting, Basic/Bearer/API-key authentication and all five Tools tabs remain in Free. Pro is a separate optional add-on; no Free functionality depends on a license service.
 

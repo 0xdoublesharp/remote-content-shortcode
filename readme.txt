@@ -4,21 +4,22 @@ Tags: shortcode, content, import, scraper, remote
 Requires at least: 6.6
 Tested up to: 7.1
 Requires PHP: 8.2
-Stable tag: 2.0
+Stable tag: 2.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-Embed remote content with a shortcode or block. Select HTML, cache imports, rewrite links, and provide fallback content.
+Embed live docs, changelogs, tables, and more with a WordPress block or shortcode. Select the HTML you need and cache imports.
 
 == Description ==
 
-Use `[remote_content url="https://example.com/"]` to fetch public HTTP or HTTPS content from your server and include it in a post or page.
+Embed live documentation in a help center, bring a product changelog or announcements into a client's site, or publish a table or HTML snippet from an API or another website. Update the source in one place and let WordPress pick up changes as its cache refreshes.
 
-Supports GET, POST, Basic/Bearer/API-key authentication through administrator-configured aliases, CSS selectors, element removal, regular expression replacement, entity encoding, tag stripping, persistent caching, relative URL rewriting, and fallback content. The Remote content block provides editor controls and a server-rendered preview using the same protected renderer as the shortcode.
+* **Choose what to show.** Use CSS selectors to include the section you need and remove unwanted elements. Replace text, strip tags, or display source as text.
+* **Build in the block editor.** Insert the Remote content Gutenberg block and preview the import in place, or use the shortcode in a post or page.
+* **Keep pages useful during outages.** Cache public GET responses and optionally show the last successful import or a fallback message if the source is unavailable.
+* **Connect to an API.** Use GET or opt in to POST for repeat-safe endpoints. Administrators can set up scoped Basic, Bearer, or API-key connections without putting secrets in posts.
 
-Remote HTML is sanitized with WordPress's allowed post HTML rules. Scripts, event handlers, and other disallowed markup are removed even when added by a replacement or an output filter. Set `htmlentities="true"` to display source code as text.
-
-PHP 8.2 or later, DOM, and cURL 7.49 or later are required. CSS selectors use the bundled, namespace-isolated Symfony CssSelector component. Most standard CSS3 selectors are supported; phpQuery compatibility is not complete, and jQuery-only selectors such as `:eq()` are not supported.
+The plugin checks public destinations before fetching and sanitizes the HTML before publishing it. Free is self-contained and runs without telemetry, a vendor account, or a license check. The optional Pro add-on uses its license for updates, so installed features keep working when update access ends.
 
 = Usage =
 
@@ -28,12 +29,12 @@ Attributes:
 
 * `url`: Absolute public HTTP or HTTPS URL. Local files, private networks, loopback addresses, credentials embedded in URLs, and unsafe ports are rejected. Standard WordPress safe HTTP ports apply.
 * `method`: GET or POST, default GET. Enclosed shortcode content is the POST body. POST responses are never cached and POST redirects are refused.
-* `timeout`: Total HTTP request budget across redirects, from 1 to 30 seconds, default 10. System DNS resolution may add time outside this budget.
+* `timeout`: Total request budget for DNS, redirects, and transfer, from 1 to 30 seconds, default 10.
 * `params`: Comma-separated query-string names, optionally with defaults, such as `id,language=en`. Only named GET values are forwarded. Values are URL-encoded; arrays are rejected. Missing values without defaults are omitted. Defaults may contain equals signs.
 * `userpwd`: A configured credential alias, such as `docs_api`. See Authentication below. Raw passwords and arbitrary option, metadata, or constant names are no longer accepted in shortcodes.
 * `selector`: Standard CSS selector for the elements to return. Defaults to the entire response. CSS processing accepts at most 2,000 elements, document depth 32, and selectors up to 256 bytes. A combined work budget accounts for generated XPath traversal, with stricter limits for descendant and sibling selectors than simple tag or class selections.
 * `remove`: CSS selector for elements to remove before selection. Defaults to no removal. The same document and selector work budgets apply before removal.
-* `rewrite_urls`: Set to true to resolve href, src, poster, cite, and ordinary srcset URLs against the remote page's final URL after redirects. Default false. Local fragment links stay local; imported base elements are ignored. CSS URLs are not rewritten. Ambiguous or data-URL srcset attributes are dropped.
+* `rewrite_urls`: Set to true to resolve relative links (`href`, `cite`) and media URLs (`src`, `poster`) against the final URL after redirects. Default false. Media still requires a trusted origin, and `srcset` stays disabled. Fragment links stay local and can point to local page anchors because imported IDs are removed.
 * `fallback`: HTML to display if the import fails or produces empty output, limited to 4,096 bytes. It is sanitized and is not interpreted as a shortcode. A response containing the string "0" remains valid content.
 * `find`: PHP regular expression, such as `~old-domain[.]com~`. Invalid patterns return empty output. Patterns are limited to 1,024 bytes, 32 opening parentheses, and 1,000 replacements per render. The input to this transformation must not exceed 256 KiB.
 * `replace`: Replacement text, including regular expression backreferences. Defaults to an empty string and is limited to 4,096 bytes. Use `%QUOT%` in find or replace to represent a double quote.
@@ -46,19 +47,19 @@ Attributes:
 
 = Block editor and diagnostics =
 
-Insert the Remote content block and set its source URL, selectors, removal rule, fallback, credential alias, URL rewriting, and cache options in the block settings. The block imports with GET. Use the shortcode for POST requests. Editor previews can make remote requests and use the same security restrictions as frontend rendering. Store only a configured credential alias in a block, never a password or token.
+Insert the Remote content block and set its source URL, selectors, removal rule, fallback, URL rewriting, and cache options. The block can forward named query parameters (`params`), apply regular expression replacements (`find`, `replace`), display escaped source (`htmlentities`), and return plain text (`strip_tags`). Select a configured connection alias in the block settings to authenticate a request. The block imports with GET. Use the shortcode for POST requests. Editor previews can fetch the source and use the same security restrictions as frontend rendering.
 
-Administrators can open Tools > Remote content > Builder and select Test content to get a sanitized preview and a shortcode together, then use Copy shortcode. Generate shortcode creates the code without fetching the source. Entered settings remain filled after submission. Diagnostics show HTTP status, cache status, selector match count, elapsed time and sanitized HTML source. Administrator tests bypass caching and show a disabled cache status; they do not measure whether visitors have a cached response. Raw request error messages, credential values, and destination URLs are excluded from diagnostic output. Test requests use a timeout of at most five seconds, plus system DNS resolution time. The generated shortcode intentionally contains the public settings entered for copying; do not include secrets in URLs, attributes or POST bodies.
+Administrators can open Tools > Remote content > Builder and select Test content to get a sanitized preview and a shortcode together, then use Copy shortcode. Generate shortcode creates the code without fetching the source. Entered settings remain filled after submission. Diagnostics show HTTP status, cache status, selector match count, elapsed time, and sanitized HTML source. Administrator tests bypass caching and show a disabled cache status. Raw request error messages, credential values, and destination URLs are excluded from diagnostic output. The five-second test timeout includes DNS resolution. The generated shortcode contains the public settings entered for copying. Keep secrets out of URLs, attributes, and POST bodies.
 
-The Connections tab manages encrypted credential aliases. The Cache tab displays active indexed entries and byte totals and can clear an exact source URL, including its query string, or all of this plugin's cache entries. Other WordPress caches are unaffected. The URL is normalized before matching; use the actual URL after any shortcode URL filter and forwarded parameters.
+The Connections tab manages encrypted credential aliases and trusted image and media origins. The Cache tab displays active indexed entries and byte totals and can clear an exact source URL, including its query string, or all of this plugin's cache entries. Other WordPress caches are unaffected. Use the actual URL after any shortcode URL filter and forwarded parameters.
 
-The Usage tab lists local posts and pages containing the shortcode or block, 20 at a time. It never fetches sources or displays post content. Help includes a copyable environment summary without source URLs, credential names or content. Every tab is administrator-only.
+The Usage tab scans public post types, including custom post types, as well as synced patterns and block templates. It lists items containing the shortcode or block, 20 at a time, without fetching sources or displaying post content. Help includes a copyable environment summary without source URLs, credential names, or content. Every tab is administrator-only.
 
 = Free and Pro =
 
 The shortcode, block, selection/removal, replacements, persistent public GET caching, stale fallback, relative URL rewriting, Basic/Bearer/API-key authentication and all five Tools tabs remain in Free. Free works on its own and contains no licensing client or licensing-service dependency.
 
-Remote Content Shortcode Pro installs separately and adds reusable sources, scheduled refreshes, OAuth and source management. Its installed features continue to work without an active update license. Add-ons use Free's protected transport and sanitized HTML pipeline rather than bypassing their restrictions.
+[Remote Content Shortcode Pro](https://www.doublesharp.com/remote-content-shortcode-pro/) installs separately and adds reusable sources, scheduled refreshes, OAuth, and source management. It uses Free's protected transport and sanitized HTML pipeline. Installed Pro features continue to work without an active update license.
 
 = POST example =
 
@@ -100,19 +101,27 @@ Basic authentication is the default. To send a stored token as a Bearer credenti
 
 = External requests and limits =
 
-The shortcode is registered in frontend, administration, and REST contexts. Requests happen when it is rendered, including editor previews and REST-rendered post content. POST rendering requires a trusted PHP grant for a repeat-safe endpoint. Imported styling and automatic browser resources are disabled by default; trusted PHP can grant exact HTTPS resource origins. See docs/security.md for configuration and processing limits. The destination is the configured URL plus explicitly forwarded query values or POST body. Credentials are sent only through a configured alias. No telemetry or developer service is contacted by the plugin.
+The shortcode is registered in frontend, administration, and REST contexts. Requests happen when it is rendered, including editor previews and REST-rendered post content. The plugin contacts the configured URL and sends explicitly forwarded query values, a POST body, or scoped credentials when configured. POST rendering requires a trusted PHP grant for a repeat-safe endpoint. The plugin sends no telemetry and requires no developer service.
 
 The site owner is responsible for authorization to reproduce remote content and for checking the destination service's terms and privacy policy. Visitors' cookies and incoming Authorization headers are not forwarded.
 
 Only public destinations are supported. Resolved addresses are checked and pinned for each request, with TLS certificate verification enabled. Public GET redirects are followed up to three times and every destination is validated. WordPress HTTP proxy routing is refused; environment proxy settings are disabled for these requests. HTTPS-only outbound proxies and private intranet imports are not supported.
 
-WordPress's safe HTTP validator requires an IPv4 address record. IPv6-only DNS names and literal IPv6 URLs are unsupported. For hosts with IPv4 records, all returned IPv4 and IPv6 addresses are checked before connecting. URL or HTTP-method changes by late Requests hooks are rejected before the transport runs. The selected peer address is checked after connecting.
+Source hostnames need a public IPv4 record. IPv6-only DNS names and literal IPv6 URLs are unsupported. All returned IPv4 and IPv6 addresses are checked before connecting. URL or HTTP-method changes by late Requests hooks are rejected before the transport runs. The selected peer address is checked after connecting.
 
-Requests advertise uncompressed responses and reject Content-Encoding responses before decompression. Responses at or above 1 MiB are rejected. CSS selector output and replacement output are limited to 1 MiB. Unsupported selectors, failed requests, invalid input, and HTTP error status codes produce empty output instead of publishing internal error messages.
+DNS uses numeric resolvers from `/etc/resolv.conf`, skips malformed entries and addresses with zone IDs, and tries the configured resolvers within the HTTP deadline. If no usable numeric resolvers are available, hostname lookups report `dns_unavailable`. On Windows or when PHP's `open_basedir` blocks the file, define `REMOTE_CONTENT_DNS_SERVERS` with up to three numeric resolver addresses.
+
+= Sanitization and processing limits =
+
+WordPress's post HTML rules remove scripts, event handlers, and other disallowed markup, including markup added by replacements or output filters. Imported `id`, `class`, and `style` attributes are removed. The output strips remote `src` and `poster` resources by default. Administrators can grant up to 16 exact public HTTPS image and media origins in **Tools → Remote content → Connections** or with the `remote_content_shortcode_resource_origins` PHP filter. A visitor's browser can contact those origins when the page displays an allowed resource. The `srcset` attribute is always removed.
+
+The transport accepts uncompressed responses, including `Content-Encoding: identity`, and stream-decompresses `gzip` and `deflate` responses under a strict 1 MiB decompressed size limit. Unsupported encodings such as `br` and `zstd` and bodies exceeding the limit after decompression are rejected. CSS selector output and replacement output are limited to 1 MiB. Unsupported selectors, failed requests, invalid input, and HTTP errors yield the configured fallback or empty output.
 
 CSS work limits are conservative. With no removal selector, `main p` permits at most 894 total elements at document depth 20; `h2 + p` permits at most 200 elements. Counts include HTML/body wrappers added by the parser. General and adjacent sibling selectors, and some pseudo-classes, are intended for small fragments. Selection and removal share the work budget, so combining them can lower these limits. Simple tag and class selections can use the full 2,000-element document limit, subject to depth and selector limits.
 
-URL rewriting covers only href, src, poster, cite, and ordinary srcset attributes. It drops URL values containing literal whitespace instead of guessing an encoding. Form actions, CSS backgrounds, the background attribute, and longdesc are not rewritten.
+URL rewriting ignores imported base elements and drops URLs containing literal whitespace. Form actions, CSS backgrounds, the background attribute, and longdesc are not rewritten.
+
+The plugin requires WordPress 6.6 or later and PHP 8.2 or later with DOM and cURL 7.49 or later. CSS selection uses the bundled, namespace-isolated Symfony CssSelector component. It supports most standard CSS3 selectors. jQuery-only selectors such as `:eq()` are unsupported.
 
 The installed plugin includes `docs/security.md` with the full security and compatibility reference. Uninstalling deletes its cached data, metadata and administrator-managed connection records on each site, including multisite. It retains PHP-configured constants, external credential options and protected metadata, and unrelated WordPress caches. Deactivation preserves settings.
 
@@ -121,6 +130,8 @@ The installed plugin includes `docs/security.md` with the full security and comp
 The existing `remote_content_shortcode_url`, `remote_content_shortcode_postfields`, `remote_content_shortcode_phpQuery`, and `remote_content_shortcode_return` filters remain available. The phpQuery-named hook is a compatibility hook for the HTML string before selection; it no longer uses phpQuery. Return-filter output is always sanitized afterward.
 
 `remote_content_shortcode_credentials` configures credential aliases. The `remote_content_shortcode_error` action receives a WP_Error and the requested URL for server-side diagnostics. Diagnostic listeners must protect any sensitive data in URLs and must not print raw errors to visitors.
+
+`remote_content_shortcode_allow_post_render` must return exactly `true` for a repeat-safe POST destination and alias used in a render. The `remote_content_shortcode_resource_origins` filter receives the allowed origins and final source URL and can grant browser access to exact public HTTPS origins.
 
 `remote_content_shortcode_admin_tabs` extends the administrator tab map, and `remote_content_shortcode_admin_tab_SLUG` renders an extension tab after the screen's administrator check. Extension actions remain responsible for their own POST nonce and permission checks. Labels are escaped and tab slugs accept only a leading lowercase letter followed by lowercase letters, digits, underscores or hyphens, up to 64 characters.
 
@@ -153,7 +164,7 @@ Use the private vulnerability reporting form at https://github.com/doublesharp/r
 
 = Can I import private intranet content or execute remote scripts? =
 
-No. Version 2 blocks private destinations and renders only allowed post HTML. Use entity encoding to display source rather than execute it.
+No. Version 2.0.0 blocks private destinations and renders only allowed post HTML. Use entity encoding to display remote source as text.
 
 = Do I need Composer on my WordPress server? =
 
@@ -166,12 +177,12 @@ No. The CSS selector dependency is bundled in the release. Its source and MIT li
 
 == Upgrade Notice ==
 
-= 2.0 =
-Security update. Requires WordPress 6.6 and PHP 8.2 with DOM and cURL. HTML is sanitized; credentials need configured aliases. Private URLs, remote scripts, compressed responses, and jQuery-only selectors are unsupported. Read the migration details before upgrading.
+= 2.0.0 =
+Security update. Requires WordPress 6.6 and PHP 8.2 with DOM and cURL. Check imports that use private URLs, remote scripts, jQuery-only selectors, or inline credentials. See docs/upgrading.md.
 
 == Changelog ==
 
-= 2.0 =
+= 2.0.0 =
 * Add a Free shortcode builder, encrypted connection manager, cache summary, usage lookup and support summary under Tools > Remote content.
 * Expose protected fetch and snapshot-rendering APIs and administrator tab hooks for separate add-ons, with no Free licensing dependency.
 * Fix CVE-2023-45652, local file inclusion; CVE-2024-2089, stored cross-site scripting; and CVE-2024-2090, server-side request forgery.
@@ -179,12 +190,14 @@ Security update. Requires WordPress 6.6 and PHP 8.2 with DOM and cURL. HTML is s
 * Sanitize all rendered remote HTML, including replacement and filter output.
 * Replace direct cURL fetches with WordPress safe HTTP requests and pin validated public addresses to prevent DNS rebinding.
 * Validate every redirect, verify TLS, and limit request time, response size, output expansion, and replacement count.
-* Reject compressed responses before decoding, local files, private networks, and proxy routing.
+* Accept identity responses and stream-decompress gzip and deflate within the 1 MiB response ceiling. Reject unsupported encodings, local files, private networks, and proxy routing.
 * Replace obsolete phpQuery with a scoped Symfony CssSelector dependency and native DOM.
 * Fix cache context collisions and query parameter encoding. Do not cache POST or authenticated responses.
 * Add bounded persistent caching without an external cache, targeted invalidation, and opt-in stale content on failed refreshes.
 * Add relative URL rewriting against the final redirect URL and sanitized fallback content.
-* Add administrator-only diagnostics and a dynamic Gutenberg block with a protected server-rendered preview.
+* Strip imported styling and IDs and let administrators grant up to 16 exact HTTPS image and media origins. Keep srcset disabled.
+* Add administrator-only diagnostics and a dynamic Gutenberg block with a protected server-rendered preview, connection selection, query forwarding, replacements, and text transformations.
+* Scan public post types, synced patterns, and block templates in Usage.
 * Support scoped Bearer tokens and API keys alongside Basic authentication.
 * Repair credential retrieval through explicit aliases restricted by HTTPS origin, exact path, and HTTP method.
 * Handle invalid selectors, patterns, input, and HTTP errors without exposing internal diagnostics.
@@ -192,6 +205,7 @@ Security update. Requires WordPress 6.6 and PHP 8.2 with DOM and cURL. HTML is s
 * Limit SyntaxHighlighter processing to this plugin's shortcode.
 * Bound document and selector work before XPath evaluation, abort oversized response transfers through cURL's progress callback, and cache public GET failures briefly.
 * Reject request-hook URL or method changes and enforce the pinned destination and TLS options after ordinary cURL hooks.
+* Share the HTTP deadline across numeric DNS resolvers, redirects, and transfer. Report unavailable resolver configuration in diagnostics.
 * Document IPv4 DNS requirements and frontend, administration, and REST rendering behavior.
 
 = 1.5 =

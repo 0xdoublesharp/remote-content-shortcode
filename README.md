@@ -7,7 +7,7 @@
 ![PHP 8.2+](https://img.shields.io/badge/PHP-8.2%2B-777BB4?logo=php&logoColor=white)
 [![License: GPL v2 or later](https://img.shields.io/badge/License-GPL_v2_or_later-blue.svg)](LICENSE.txt)
 
-Bring selected content from another site into WordPress. Choose the elements to include, cache the response, and render sanitized HTML in a post or page using a **shortcode** or the **Remote content block**.
+Embed live documentation, changelogs, announcements, tables, or HTML snippets from an API or another site. Choose the sections you need with CSS selectors, cache the response, and publish sanitized HTML using a **shortcode** or the **Remote content Gutenberg block**. Free runs without telemetry, a vendor account, or a license check.
 
 [Quick start](#quick-start) · [Examples](#examples) · [Settings](#settings) · [Authentication](#authentication) · [Security](#security-and-compatibility)
 
@@ -15,7 +15,7 @@ Bring selected content from another site into WordPress. Choose the elements to 
 
 - **Select content.** Import a whole response or choose elements with CSS selectors. Remove unwanted elements before selection.
 - **Cache imports.** Reuse public GET responses through a persistent object cache or database transients. Optionally serve the last successful response during an outage.
-- **Keep links working.** Resolve relative links and image URLs against the remote page's final URL with `rewrite_urls="true"`.
+- **Keep links working.** Resolve relative links and allowed media URLs against the final URL after redirects with `rewrite_urls="true"`.
 - **Control the result.** Replace text with regular expressions, strip HTML, display escaped source, or provide fallback content.
 - **Connect to APIs.** Send GET or POST requests and use administrator-configured Basic, Bearer, or API-key credentials.
 - **Build and inspect imports.** Generate a copyable shortcode, preview sanitized output, manage credential aliases, inspect cache totals, and find local usage under **Tools → Remote content**.
@@ -30,7 +30,7 @@ Add a Shortcode block to a post or page:
 [remote_content url="https://example.com/article" selector="main"]
 ```
 
-Or insert the **Remote content** block and configure its URL, selectors, fallback, and cache options in the block settings. Its server-rendered preview uses the same renderer as the shortcode. The block supports GET; use the shortcode for POST requests.
+Or insert the **Remote content** block and configure its URL, selectors, fallback, rewriting, and cache options. Choose a configured connection alias for authenticated requests. The block also supports named query forwarding (`params`), regular expression replacements (`find`, `replace`), escaped source (`htmlentities`), and plain text (`strip_tags`). Its server-rendered preview uses the same protected renderer as the shortcode. The block supports GET. Use the shortcode for POST requests.
 
 Plugin directory: [Remote Content Shortcode on WordPress.org](https://wordpress.org/plugins/remote-content-shortcode/).
 
@@ -42,7 +42,20 @@ Plugin directory: [Remote Content Shortcode on WordPress.org](https://wordpress.
 [remote_content url="https://example.com/news" selector=".announcements" remove="script, .advertisement" rewrite_urls="true"]
 ```
 
-Rewriting supports `href`, `src`, `poster`, `cite`, and ordinary `srcset` values. Fragment links such as `#details` stay local. CSS background URLs are not rewritten.
+Rewriting resolves relative `href`, `cite`, `src`, and `poster` URLs against the final URL after redirects. Fragment links such as `#details` stay local. Imported IDs are stripped, so these links can only reach an anchor that exists on the WordPress page. CSS background URLs are excluded from rewriting.
+
+### Show images from a trusted origin
+
+Imported `id`, `class`, and `style` attributes are stripped for safety. Remote `src` and `poster` are stripped by default, and `srcset` stays disabled. Administrators can grant up to 16 exact public HTTPS image and media origins in **Tools → Remote content → Connections** or through the `remote_content_shortcode_resource_origins` PHP filter.
+
+```php
+add_filter( 'remote_content_shortcode_resource_origins', static function ( $origins ) {
+    $origins[] = 'https://images.example.com';
+    return $origins;
+} );
+```
+
+The visitor's browser can contact an allowed origin to load the media. See [the resource policy](docs/security.md#html-and-resource-limits).
 
 ### Cache a response and handle an outage
 
@@ -74,16 +87,6 @@ add_filter( 'remote_content_shortcode_allow_post_render', static function ( $all
 }, 10, 3 );
 ```
 
-Imported styling and automatic browser resources are removed by default. To permit images from a trusted HTTPS origin:
-
-```php
-add_filter( 'remote_content_shortcode_resource_origins', static function () {
-    return array( 'https://images.example.com' );
-} );
-```
-
-Granted resource URLs resolve against the remote page and remain subject to destination and count limits. See [the security reference](docs/security.md) for render budgets and DNS configuration.
-
 ### Display source or plain text
 
 ```text
@@ -99,7 +102,7 @@ Granted resource URLs resolve against the remote page and remain subject to dest
 | `selector` | CSS selector for elements to return | Entire response |
 | `remove` | CSS selector for elements to remove first | None |
 | `method` | `GET` or `POST` | `GET` |
-| `timeout` | HTTP request budget across redirects, 1–30 seconds | `10` |
+| `timeout` | Shared budget for DNS, redirects, and transfer, 1–30 seconds | `10` |
 | `cache` | Cache public GET responses for logged-out visitors | `true` |
 | `cache_ttl` | Fresh cache lifetime, 1–86,400 seconds | `3600` |
 | `stale_ttl` | Additional outage fallback window, 0–86,400 seconds | `0`, disabled |
@@ -153,9 +156,9 @@ An alias grants shortcode authors access to its endpoint. Anyone who can view th
 **Tools → Remote content** has five Free tabs:
 
 - **Builder** keeps source settings, a sanitized preview and a copyable shortcode together. Select **Test content**, inspect the preview, then **Copy shortcode**. Settings stay filled after testing; **Generate shortcode** creates the code without fetching the source. POST bodies entered here become post content when the generated shortcode is copied.
-- **Connections** stores up to 32 encrypted credential aliases per site and lists read-only PHP aliases.
+- **Connections** stores up to 32 encrypted credential aliases per site, lists read-only PHP aliases, and manages trusted image and media origins.
 - **Cache** shows active indexed entry and byte totals and clears an exact source URL or all plugin entries.
-- **Usage** lists local posts and pages containing the shortcode or block, 20 at a time. It does not fetch sources or display post content.
+- **Usage** scans public post types, including custom post types, as well as synced patterns and block templates. It lists matches 20 at a time without fetching sources or displaying post content.
 - **Help** includes a copyable environment summary without source URLs, credentials or content.
 
 The shortcode, block, selectors, public GET cache, stale fallback, URL rewriting, Basic/Bearer/API-key connections and all five tabs are part of Free. Free works independently and has no license client or licensing-service dependency.
@@ -166,7 +169,7 @@ The shortcode, block, selectors, public GET cache, stale fallback, URL rewriting
 
 ### Remote Content Shortcode Pro
 
-Pro is a separate add-on for sites managing recurring imports or multiple sources. It requires Free 2.0 or later and uses Free's protected fetching and HTML transformations.
+[Remote Content Shortcode Pro](https://www.doublesharp.com/remote-content-shortcode-pro/) is a separate add-on for sites managing recurring imports or multiple sources. It requires Free 2.0.0 or later and uses Free's protected fetching and HTML transformations.
 
 | Need | Included in Free | Added by Pro |
 | --- | --- | --- |
@@ -190,7 +193,7 @@ Requests accept only public HTTP and HTTPS destinations. Local files, private ne
 
 Resource limits include:
 
-- Responses must be **smaller than 1 MiB**; compressed responses are refused.
+- Responses with no content encoding or `Content-Encoding: identity` are accepted. The transport stream-decompresses `gzip` and `deflate` under a strict **1 MiB** decompressed ceiling. Unsupported encodings such as `br` and `zstd` and bodies exceeding the limit after decompression are rejected.
 - CSS processing allows up to **2,000 elements**, depth **32**, and selectors up to **256 bytes**, with additional work limits for expensive expressions.
 - Invalid inputs, unsupported selectors, and failed requests produce empty output or the configured fallback.
 
@@ -203,11 +206,13 @@ Resource limits include:
 | PHP extensions | DOM and cURL |
 | cURL | 7.49 with `CURLOPT_CONNECT_TO` support |
 
-IPv6-only hosts, literal IPv6 URLs, private intranet imports, and proxy-only outbound networking are unsupported. System DNS resolution may add time outside the configured HTTP timeout.
+IPv6-only hosts, literal IPv6 URLs, private intranet imports, and proxy-only outbound networking are unsupported.
+
+DNS uses numeric resolvers from `/etc/resolv.conf`, skips malformed entries and addresses with zone IDs, and fails over within the HTTP timeout shared by DNS, redirects, and transfer. If no usable numeric resolvers are available, hostname lookups report `dns_unavailable`. On Windows or when PHP's `open_basedir` blocks the file, define `REMOTE_CONTENT_DNS_SERVERS` with up to three numeric resolver addresses.
 
 ### Upgrading from 1.x
 
-Review existing imports before upgrading. Version 2 removes executable remote markup and implicit credential lookup, replaces phpQuery with a bundled Symfony CSS selector implementation, and adds bounded caching and processing. jQuery-only selectors such as `:eq()` are unsupported. Imports that rely on scripts, private URLs, compressed responses, or the former SSL-bypass settings need adjustment.
+Review existing imports before upgrading to 2.0.0. This release strips executable remote markup, requires explicit credential aliases, replaces phpQuery with a bundled Symfony CSS selector implementation, and adds bounded caching and processing. Imports that rely on scripts, private URLs, unsupported content encodings, jQuery-only selectors such as `:eq()`, or the former SSL-bypass settings need adjustment.
 
 The [security and compatibility reference](docs/security.md) describes these restrictions and migration considerations in full.
 

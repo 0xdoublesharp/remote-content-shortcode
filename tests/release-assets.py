@@ -21,7 +21,7 @@ class ReleaseAssets(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(prefix='release-assets-', dir=BASE)
         self.directory = Path(self.temp.name)
         self.log = self.directory / 'calls.json'
-        self.archive = self.directory / 'remote-content-shortcode-2.0.zip'
+        self.archive = self.directory / 'remote-content-shortcode-2.0.0.zip'
         self.archive.write_bytes(b'test plugin ZIP bytes')
         self.checksum = self.directory / (self.archive.name + '.sha256')
         self.checksum.write_text(hashlib.sha256(self.archive.read_bytes()).hexdigest() + '  ' + self.archive.name + '\n')
@@ -45,8 +45,8 @@ if sys.argv[1:3] == ['release', 'upload'] and os.environ.get('RCS_GH_UPLOAD_FAIL
         self.temp.cleanup()
 
     def run_release(self, *extra):
-        return subprocess.run([sys.executable, str(ROOT / 'tools/github-release.py'), '--tag', '2.0',
-                               '--version', '2.0', '--directory', str(self.directory), *extra],
+        return subprocess.run([sys.executable, str(ROOT / 'tools/github-release.py'), '--tag', '2.0.0',
+                               '--version', '2.0.0', '--directory', str(self.directory), *extra],
                               env=self.env, capture_output=True, text=True, timeout=10)
 
     def calls(self):
@@ -74,7 +74,7 @@ if sys.argv[1:3] == ['release', 'upload'] and os.environ.get('RCS_GH_UPLOAD_FAIL
         self.assertEqual('upload', calls[2][1])
         self.assertIn(str(self.archive), calls[2])
         self.assertIn(str(self.checksum), calls[2])
-        self.assertEqual(['release', 'edit', '2.0', '--draft=false'], calls[3])
+        self.assertEqual(['release', 'edit', '2.0.0', '--draft=false'], calls[3])
 
     def test_published_release_is_not_overwritten(self):
         self.env['RCS_GH_STATE'] = 'published'
