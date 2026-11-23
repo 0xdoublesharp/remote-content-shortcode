@@ -6,6 +6,11 @@ rcs_ab_assert( class_exists( 'Remote_Content_Shortcode_Admin' ), 'Admin diagnost
 rcs_ab_assert( class_exists( 'Remote_Content_Shortcode_Block' ), 'Dynamic block module is missing.' );
 $block = WP_Block_Type_Registry::get_instance()->get_registered( 'remote-content-shortcode/remote-content' );
 rcs_ab_assert( $block && $block->is_dynamic(), 'Dynamic block is not registered.' );
+foreach ( array( 'params' => '', 'find' => '', 'replace' => '', 'htmlentities' => false, 'stripTags' => false ) as $key => $default ) {
+	$schema = $block->attributes[ $key ] ?? array();
+	$type = is_bool( $default ) ? 'boolean' : 'string';
+	rcs_ab_assert( $type === ( $schema['type'] ?? null ) && $default === ( $schema['default'] ?? null ), "Missing or incorrect block attribute schema for $key." );
+}
 $attrs = array( 'url' => '', 'fallback' => '<strong>offline</strong><script>alert(1)</script>', 'cache' => false );
 $rendered = render_block( array( 'blockName' => 'remote-content-shortcode/remote-content', 'attrs' => $attrs, 'innerBlocks' => array(), 'innerHTML' => '', 'innerContent' => array() ) );
 $shortcode = RemoteContentShortcode::get_instance()->remote_content_shortcode( array( 'url' => '', 'fallback' => $attrs['fallback'], 'cache' => 'false' ) );
@@ -13,10 +18,30 @@ rcs_ab_assert( $rendered === $shortcode, 'Block differs from shared shortcode re
 rcs_ab_assert( ! str_contains( $rendered, '<script' ), 'Block returned executable fallback HTML.' );
 rcs_ab_assert( is_string( Remote_Content_Shortcode_Block::render( array( 'url' => array( 'bad' ), 'cacheTtl' => array() ) ) ), 'Malformed block attributes failed safely.' );
 $fixture_attrs = array( 'url' => 'http://source.rcs.test/ok', 'selector' => 'p', 'cache' => false, 'rewriteUrls' => true );
-$serialized = serialize_block( array( 'blockName' => 'remote-content-shortcode/remote-content', 'attrs' => $fixture_attrs, 'innerBlocks' => array(), 'innerHTML' => '', 'innerContent' => array() ) );
-$fixture_block = do_blocks( $serialized );
-$fixture_shortcode = RemoteContentShortcode::get_instance()->remote_content_shortcode( array( 'url' => $fixture_attrs['url'], 'selector' => 'p', 'cache' => 'false', 'rewrite_urls' => 'true' ) );
-rcs_ab_assert( str_contains( $fixture_block, 'fixture success' ) && $fixture_block === $fixture_shortcode, 'Saved block and shortcode did not render the same remote fixture.' );
+$fixture_shortcode_attrs = array( 'url' => $fixture_attrs['url'], 'selector' => 'p', 'cache' => 'false', 'rewrite_urls' => 'true' );
+$transforms = array( 'params' => 'rcs_block_feature=forwarded', 'find' => '/fixture success/', 'replace' => 'replacement marker' );
+$seen_urls = array();
+$capture_url = static function ( $url ) use ( &$seen_urls ) {
+	$seen_urls[] = $url;
+	return $url;
+};
+add_filter( 'remote_content_shortcode_url', $capture_url );
+try {
+	foreach ( array( 'htmlentities' => 'htmlentities', 'stripTags' => 'strip_tags' ) as $block_key => $shortcode_key ) {
+		$serialized = serialize_block( array( 'blockName' => 'remote-content-shortcode/remote-content', 'attrs' => $fixture_attrs + $transforms + array( $block_key => true ), 'innerBlocks' => array(), 'innerHTML' => '', 'innerContent' => array() ) );
+		$fixture_block = do_blocks( $serialized );
+		$fixture_shortcode = RemoteContentShortcode::get_instance()->remote_content_shortcode( $fixture_shortcode_attrs + $transforms + array( $shortcode_key => 'true' ) );
+		$expected = 'htmlentities' === $block_key ? '&lt;p&gt;replacement marker&lt;/p&gt;' : 'replacement marker';
+		rcs_ab_assert( $expected === trim( $fixture_block ) && $fixture_block === $fixture_shortcode, "Saved block and shortcode differed for $block_key." );
+	}
+	rcs_ab_assert( array_fill( 0, 4, $fixture_attrs['url'] . '?rcs_block_feature=forwarded' ) === $seen_urls, 'Block and shortcode did not forward the same query parameter.' );
+	$malformed = array( 'params' => array( 'bad' ), 'find' => 123, 'replace' => array(), 'htmlentities' => 'true', 'stripTags' => 1 );
+	$fixture_block = Remote_Content_Shortcode_Block::render( $fixture_attrs + $malformed );
+	$fixture_shortcode = RemoteContentShortcode::get_instance()->remote_content_shortcode( $fixture_shortcode_attrs );
+	rcs_ab_assert( '<p>fixture success</p>' === trim( $fixture_block ) && $fixture_block === $fixture_shortcode, 'Malformed block attributes did not preserve the shortcode defaults.' );
+} finally {
+	remove_filter( 'remote_content_shortcode_url', $capture_url );
+}
 $old_user = get_current_user_id();
 wp_set_current_user( 0 );
 rcs_ab_assert( is_wp_error( Remote_Content_Shortcode_Admin::process_action( array( 'rcs_action' => 'test' ) ) ), 'Anonymous admin action accepted.' );
