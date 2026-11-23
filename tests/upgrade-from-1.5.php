@@ -33,7 +33,7 @@ if ( 'prepare' === $phase ) {
 	return;
 }
 $data = get_plugin_data( WP_PLUGIN_DIR . '/remote-content-shortcode/remote-content-shortcode.php' );
-$assert( '2.0' === $data['Version'] && is_plugin_active( 'remote-content-shortcode/remote-content-shortcode.php' ), 'Upgrade did not leave v2 active.' );
+$assert( '2.0.0' === $data['Version'] && is_plugin_active( 'remote-content-shortcode/remote-content-shortcode.php' ), 'Upgrade did not leave v2 active.' );
 $assert( ! file_exists( WP_PLUGIN_DIR . '/remote-content-shortcode/inc/phpQuery.php' ), 'Obsolete phpQuery survived the upgrade.' );
 $ids = get_option( 'rcs_upgrade_posts' );
 $assert( is_array( $ids ) && count( $ids ) === count( $cases ), 'Saved posts were lost during the upgrade.' );

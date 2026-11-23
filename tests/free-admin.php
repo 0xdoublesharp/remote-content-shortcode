@@ -239,6 +239,37 @@ $document = static function ( $html ) {
 	finally { libxml_clear_errors(); libxml_use_internal_errors( $previous ); }
 	return new DOMXPath( $document );
 };
+$tests['builder omits shortcode defaults and only encloses a POST body'] = static function () use ( $page, $document ) {
+	$input = array( '_wpnonce' => wp_create_nonce( 'rcs_tools' ), 'rcs_action' => 'generate', 'url' => 'https://example.com/', 'method' => 'GET', 'timeout' => '10', 'cache' => 'true', 'cache_ttl' => '3600', 'stale_ttl' => '0', 'rewrite_urls' => 'false', 'strip_tags' => 'false', 'htmlentities' => 'false', 'body' => 'field=value' );
+	$minimal = '[remote_content decode_atts="true" url="&quot;https://example.com/&quot;"]';
+	rcs_free_assert( $minimal === Remote_Content_Shortcode_Admin::process_action( $input ), 'The default GET emitted redundant attributes or an enclosed body.' );
+	$xpath = $document( $page( 'builder' ) );
+	rcs_free_assert( '10' === $xpath->evaluate( 'string(//input[@name="timeout"]/@value)' ), 'Builder timeout differs from the shortcode default.' );
+	$input['method'] = 'POST'; $input['timeout'] = '0'; $input['cache_ttl'] = '1.5'; $input['stale_ttl'] = '1e100';
+	$code = Remote_Content_Shortcode_Admin::process_action( $input );
+	foreach ( array( 'method' => 'POST', 'timeout' => '1', 'cache_ttl' => '1', 'stale_ttl' => '86400' ) as $name => $value ) {
+		rcs_free_assert( str_contains( $code, $name . '="&quot;' . $value . '&quot;"' ), "Builder did not normalize $name." );
+	}
+	rcs_free_assert( str_ends_with( $code, ']field=value[/remote_content]' ), 'POST lost its enclosed body.' );
+};
+$tests['successful JSON preview shows the full response and honors promotion suppression'] = static function () use ( $page, $document ) {
+	$input = array( '_wpnonce' => wp_create_nonce( 'rcs_tools' ), 'rcs_action' => 'test', 'url' => 'http://source.rcs.test/ok' );
+	$respond = static fn() => array( 'headers' => array( 'content-type' => 'application/problem+json; charset=utf-8' ), 'body' => '{"status":"ok"}', 'response' => array( 'code' => 200 ) );
+	add_filter( 'pre_http_request', $respond );
+	try {
+		$xpath = $document( $page( 'builder', $input ) );
+		$preview = '//*[@id="rcs-preview-content"]';
+		rcs_free_assert( 1 === $xpath->query( $preview . '//div[@class="rcs-preview-meta"]/span[.="Full response"]' )->length, 'A preview without a selector should say Full response.' );
+		$tip = $xpath->query( $preview . '//p[@class="rcs-pro-tip"]' )->item( 0 );
+		rcs_free_assert( $tip && str_contains( $tip->textContent, 'escaped JSON templates' ) && str_contains( $tip->textContent, 'bounded loops' ) && 1 === $xpath->query( './/a', $tip )->length, 'Successful JSON test omitted the contextual Pro tip.' );
+		add_filter( 'remote_content_shortcode_show_pro_overview', '__return_false' );
+		try { rcs_free_assert( ! str_contains( $page( 'builder', $input ), 'class="rcs-pro-tip"' ), 'Suppression did not hide the JSON Pro tip.' ); }
+		finally { remove_filter( 'remote_content_shortcode_show_pro_overview', '__return_false' ); }
+	} finally { remove_filter( 'pre_http_request', $respond ); }
+	$input['url'] = 'http://127.0.0.1/private';
+	$xpath = $document( $page( 'builder', $input ) );
+	rcs_free_assert( 'unverified' === $xpath->evaluate( 'string(//*[@id="rcs-shortcode-panel"]/@data-state)' ) && 0 === $xpath->query( $preview . '//p[@class="rcs-pro-tip"]' )->length, 'A failed test presented a verified shortcode or a JSON tip.' );
+};
 $tests['diagnostic previews isolate remote styles and landmarks'] = static function () use ( $document ) {
 	$render = new ReflectionMethod( Remote_Content_Shortcode_Admin::class, 'result' );
 	ob_start();
@@ -330,6 +361,47 @@ $tests['connection text fields use WordPress control styling'] = static function
 	rcs_free_assert( 4 === $fields->length, 'Connection form omitted its public text fields.' );
 	foreach ( $fields as $field ) { rcs_free_assert( 'text' === $field->getAttribute( 'type' ), 'Connection field omits its text input type.' ); }
 };
+$tests['connection forms have unique labeled controls and reveal secret presence only'] = static function () use ( $page, $document, $fixture ) {
+	$with_secret = $fixture( 'has-secret' );
+	$without_secret = $fixture( 'no-secret' ); $without_secret['delete_secret'] = '1';
+	foreach ( array( $with_secret, $without_secret ) as $input ) {
+		rcs_free_assert( $input['alias'] === Remote_Content_Shortcode_Connections::save( $input ), 'Could not save connection fixture.' );
+	}
+	$html = $page( 'connections' ); $xpath = $document( $html );
+	rcs_free_assert( 0 === $xpath->query( '//*[@id="_wpnonce"]' )->length && 4 === $xpath->query( '//form/input[@type="hidden"][@name="_wpnonce"]' )->length, 'Connection and origins forms must submit nonces without duplicate IDs.' );
+	foreach ( array( 'alias' => 'Alias', 'origin' => 'HTTPS origin', 'path' => 'Exact endpoint path', 'header' => 'API key header', 'auth' => 'Authentication', 'secret' => 'Secret' ) as $name => $label ) {
+		foreach ( $xpath->query( '//*[@name="' . $name . '"]' ) as $field ) {
+			$id = $field->getAttribute( 'id' );
+			rcs_free_assert( '' !== $id && 1 === $xpath->query( '//*[@id="' . $id . '"]' )->length && $label === $xpath->evaluate( 'string(//label[@for="' . $id . '"])' ), "Missing unique accessible label for $name." );
+		}
+	}
+	foreach ( array( 'has-secret' => 'Saved secret present', 'no-secret' => 'No secret saved' ) as $alias => $status ) {
+		$form = $xpath->query( '//form[.//input[@name="alias"][@value="' . $alias . '"]]' )->item( 0 );
+		rcs_free_assert( $form && $status === $xpath->evaluate( 'string(.//*[@class="rcs-secret-status"])', $form ), 'Connection does not report its saved secret status.' );
+		rcs_free_assert( (int) ( 'has-secret' === $alias ) === $xpath->query( './/input[@name="delete_secret"]', $form )->length, 'Secret removal was shown for a connection without a secret or missing for one with a secret.' );
+	}
+	$builder = $document( $page( 'builder' ) );
+	$list = '//*[@id="rcs-connection-aliases"]';
+	rcs_free_assert( 'rcs-connection-aliases' === $builder->evaluate( 'string(//input[@id="rcs-userpwd"]/@list)' ) && 2 === $builder->query( $list . '/option[@value="has-secret" or @value="no-secret"]' )->length && 2 === $builder->query( $list . '/option' )->length, 'Builder suggestions must contain only configured aliases.' );
+	rcs_free_assert( ! str_contains( $html, $with_secret['secret'] ), 'Connection form leaked its saved secret.' );
+};
+$tests['trusted image origins save and retain invalid drafts safely'] = static function () use ( $page, $document ) {
+	$option = Remote_Content_Shortcode_Output::ORIGINS_OPTION;
+	$old = get_option( $option, null );
+	$input = array( '_wpnonce' => wp_create_nonce( 'rcs_connections' ), 'connection_action' => 'save_origins', 'resource_origins' => "https://images.example.com/\nhttps://cdn.example.com" );
+	try {
+		$html = $page( 'connections', $input ); $xpath = $document( $html );
+		$expected = array( 'https://images.example.com', 'https://cdn.example.com' );
+		$field = '//textarea[@name="resource_origins"][@class="large-text code"]';
+		rcs_free_assert( $expected === Remote_Content_Shortcode_Output::stored_origins() && implode( "\n", $expected ) === $xpath->evaluate( 'string(' . $field . ')' ) && str_contains( $html, 'Trusted image origins saved.' ), 'Origin save did not persist, normalize, and acknowledge the list.' );
+		$input['resource_origins'] = "http://images.example.com\n</textarea><script>alert(1)</script>";
+		$html = $page( 'connections', $input ); $xpath = $document( $html );
+		rcs_free_assert( $expected === Remote_Content_Shortcode_Output::stored_origins() && $input['resource_origins'] === $xpath->evaluate( 'string(' . $field . ')' ) && 0 === $xpath->query( '//script' )->length && str_contains( $html, 'notice-error' ), 'Invalid origin draft was lost, persisted, or rendered as markup.' );
+		$summary = $document( $page( 'help' ) )->evaluate( 'string(//textarea[@aria-label="Support summary"])' );
+		$dns = Remote_Content_Shortcode_DNS::has_resolvers() ? 'detected' : 'unavailable';
+		rcs_free_assert( str_contains( $summary, 'Plugin: 2.0.0' ) && str_contains( $summary, 'DNS resolvers: ' . $dns ) && str_contains( $summary, 'Trusted image origins: 2' ) && ! str_contains( $summary, 'example.com' ), 'Support summary omitted runtime configuration status or exposed an origin.' );
+	} finally { null === $old ? delete_option( $option ) : update_option( $option, $old, false ); }
+};
 $tests['usage is paginated and support copy omits content and secrets'] = static function () use ( $page ) {
 	$ids = array();
 	try {
@@ -346,11 +418,62 @@ $tests['Pro overview is restrained, accurate and makes no background requests'] 
 			$html = $page( $tab );
 			rcs_free_assert( 1 === substr_count( $html, 'id="rcs-pro-overview"' ) && str_contains( $html, 'aria-labelledby="rcs-pro-heading"' ), 'Expected one accessible Pro overview on the plugin page.' );
 			rcs_free_assert( str_contains( $html, 'OAuth' ) && str_contains( $html, 'Scheduled refreshes' ) && str_contains( $html, 'JSON templates' ) && str_contains( $html, 'remain included in Free' ), 'Pro overview obscures the Free/Pro feature boundary.' );
-			rcs_free_assert( str_contains( $html, 'https://github.com/doublesharp/remote-content-shortcode#remote-content-shortcode-pro' ) && str_contains( $html, 'button button-secondary' ), 'Pro details do not have a quiet, working destination.' );
+			rcs_free_assert( str_contains( $html, 'No telemetry' ) && str_contains( $html, 'keep working without renewal' ), 'Pro overview omitted its telemetry and renewal behavior.' );
+			rcs_free_assert( str_contains( $html, 'https://www.doublesharp.com/remote-content-shortcode-pro/' ) && str_contains( $html, 'button button-secondary' ), 'Pro details do not have a quiet, working destination.' );
 			if ( in_array( $tab, array( 'builder', 'connections', 'cache' ), true ) ) { rcs_free_assert( strpos( $html, 'id="rcs-pro-overview"' ) > strrpos( $html, '</form>' ), 'Promotion interrupted the Free controls.' ); }
 		}
 		rcs_free_assert( 0 === $requests, 'Pro overview phoned home while rendering.' );
 	} finally { remove_filter( 'pre_http_request', $block ); }
+};
+$tests['usage includes public custom content and synced patterns'] = static function () use ( $page, $document ) {
+	register_post_type( 'rcs_test_public', array( 'public' => true ) );
+	$ids = array();
+	try {
+		foreach ( array( 'rcs_test_public', 'wp_block', 'wp_template', 'wp_template_part', 'attachment' ) as $type ) {
+			$id = wp_insert_post( array( 'post_type' => $type, 'post_status' => 'publish', 'post_title' => 'Remote import in ' . $type, 'post_content' => '[remote_content url="https://example.com/"]' ), true );
+			rcs_free_assert( ! is_wp_error( $id ), 'Could not save Usage fixture.' );
+			$ids[ $type ] = $id;
+		}
+		$xpath = $document( $page( 'usage' ) );
+		foreach ( $ids as $type => $id ) {
+			rcs_free_assert( (int) ( 'attachment' !== $type ) === $xpath->query( '//tr[@data-rcs-usage="' . $id . '"]' )->length, "Unexpected Usage visibility for $type." );
+		}
+		rcs_free_assert( 0 === $xpath->query( '//tr[@data-rcs-usage]//a[@href=""]' )->length && 1 === $xpath->query( '//p[@class="rcs-pro-tip"]' )->length, 'Usage displayed an empty action link or omitted its contextual Pro tip.' );
+	} finally {
+		foreach ( $ids as $id ) { wp_delete_post( $id, true ); }
+		unregister_post_type( 'rcs_test_public' );
+	}
+};
+$tests['legacy shortcode usage triggers a protected administrator notice'] = static function () {
+	$dismissed = 'rcs_v2_upgrade_notice_dismissed'; $checked = 'rcs_v2_upgrade_notice_checked';
+	$old = array( $dismissed => get_option( $dismissed, null ), $checked => get_option( $checked, null ) );
+	$notice = static function () {
+		ob_start();
+		Remote_Content_Shortcode_Admin::upgrade_notice();
+		return ob_get_clean();
+	};
+	$id = wp_insert_post( array( 'post_title' => 'Legacy import', 'post_status' => 'publish', 'post_content' => '[remote_content url="https://example.com/"]' ), true );
+	rcs_free_assert( ! is_wp_error( $id ), 'Could not save a legacy Usage fixture.' );
+	try {
+		delete_option( $dismissed ); delete_option( $checked );
+		wp_set_current_user( 0 );
+		rcs_free_assert( '' === $notice() && false === get_option( $checked ), 'Upgrade notice detected content without administrator access.' );
+		wp_set_current_user( 1 );
+		$html = $notice();
+		rcs_free_assert( str_contains( $html, 'tab=usage' ) && str_contains( $html, 'tab=help' ) && str_contains( $html, 'rcs_upgrade_nonce' ) && has_action( 'admin_post_rcs_dismiss_upgrade_notice' ), 'Upgrade notice omitted its review links or protected dismissal.' );
+		$previous_request = $_REQUEST;
+		$_REQUEST = array( 'rcs_upgrade_nonce' => wp_create_nonce( 'rcs_dismiss_upgrade_notice' ), '_wp_http_referer' => admin_url( 'tools.php?page=remote-content-shortcode&tab=usage' ) );
+		$redirect = static function ( $location ) { throw new RuntimeException( $location ); };
+		add_filter( 'wp_redirect', $redirect );
+		$location = '';
+		try { Remote_Content_Shortcode_Admin::dismiss_upgrade_notice(); }
+		catch ( RuntimeException $error ) { $location = $error->getMessage(); }
+		finally { remove_filter( 'wp_redirect', $redirect ); $_REQUEST = $previous_request; }
+		rcs_free_assert( str_contains( $location, 'tab=usage' ) && '1' === get_option( $dismissed ) && '' === $notice(), 'Protected dismissal did not hide the notice.' );
+	} finally {
+		wp_set_current_user( 1 ); wp_delete_post( $id, true );
+		foreach ( $old as $option => $value ) { null === $value ? delete_option( $option ) : update_option( $option, $value, false ); }
+	}
 };
 $tests['Pro overview respects suppression and extension pages'] = static function () use ( $page ) {
 	$hide = '__return_false'; add_filter( 'remote_content_shortcode_show_pro_overview', $hide );
@@ -362,10 +485,13 @@ $tests['Pro overview respects suppression and extension pages'] = static functio
 };
 $tests['active Pro customers do not see an upgrade pitch'] = static function () use ( $page ) {
 	define( 'RCS_PRO_VERSION', '2.0' );
-	foreach ( array( 'builder', 'connections', 'help' ) as $tab ) { rcs_free_assert( ! str_contains( $page( $tab ), 'id="rcs-pro-overview"' ), 'Active Pro customer received an upgrade pitch.' ); }
+	foreach ( array( 'builder', 'connections', 'help' ) as $tab ) {
+		$html = $page( $tab );
+		rcs_free_assert( ! str_contains( $html, 'id="rcs-pro-overview"' ) && ! str_contains( $html, 'class="rcs-pro-tip"' ), 'Active Pro customer received an upgrade pitch.' );
+	}
 };
 $old = get_option( 'rcs_connections_v1', null ); $old_user = get_current_user_id(); $request = $_REQUEST; $failures = 0;
-try { foreach ( $tests as $name => $test ) { wp_set_current_user( 1 ); delete_option( 'rcs_connections_v1' ); try { $test(); echo "PASS $name\n"; } catch ( Throwable $error ) { ++$failures; echo "FAIL $name: " . $error->getMessage() . "\n"; } } }
+try { foreach ( $tests as $name => $test ) { Remote_Content_Shortcode_Budget::reset(); wp_set_current_user( 1 ); delete_option( 'rcs_connections_v1' ); try { $test(); echo "PASS $name\n"; } catch ( Throwable $error ) { ++$failures; echo "FAIL $name: " . $error->getMessage() . "\n"; } } }
 finally { null === $old ? delete_option( 'rcs_connections_v1' ) : update_option( 'rcs_connections_v1', $old, false ); wp_set_current_user( $old_user ); $_REQUEST = $request; }
 if ( $failures ) { WP_CLI::error( "$failures Free admin failures" ); }
 echo count( $tests ) . " Free admin cases passed\n";
