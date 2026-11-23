@@ -1,13 +1,18 @@
 <?php
 /** Real UDP DNS and end-to-end deadline regressions in the isolated local fixture. */
 if ( ! defined( 'ABSPATH' ) ) { exit; }
-if ( ! defined( 'REMOTE_CONTENT_DNS_SERVERS' ) ) { define( 'REMOTE_CONTENT_DNS_SERVERS', array( '127.0.0.1' ) ); }
+if ( ! defined( 'REMOTE_CONTENT_DNS_SERVERS' ) ) { define( 'REMOTE_CONTENT_DNS_SERVERS', array( '::1', '127.0.0.1' ) ); }
 require_once getenv( 'RCS_PLUGIN_FILE' ) ?: dirname( __DIR__ ) . '/remote-content-shortcode.php';
 $process = proc_open( array( PHP_BINARY, __DIR__ . '/fixtures/audit-dns-server.php' ), array( 0 => array( 'pipe', 'r' ), 1 => array( 'pipe', 'w' ), 2 => STDERR ), $pipes );
 if ( ! is_resource( $process ) ) { throw new RuntimeException( 'DNS fixture failed to start.' ); }
 try {
 	stream_set_timeout( $pipes[1], 3 );
 	if ( "READY\n" !== fgets( $pipes[1] ) ) { throw new RuntimeException( 'DNS fixture was not ready.' ); }
+	$parse = new ReflectionMethod( Remote_Content_Shortcode_DNS::class, 'parse_resolv_conf' );
+	$config = "nameserver fe80::1%eth0\nnameserver 1.1.1.1junk\nnameserver 192.0.2.1 junk\nnameserver 192.0.2.2 # local\n\tnameserver 2001:db8::53\nnameserver 192.0.2.3\nnameserver 192.0.2.4\n";
+	if ( array( '192.0.2.2', '2001:db8::53', '192.0.2.3' ) !== $parse->invoke( null, $config ) || ! Remote_Content_Shortcode_DNS::has_resolvers() ) { throw new RuntimeException( 'Resolver filtering or availability failed.' ); }
+	if ( array( '8.8.8.8' ) !== Remote_Content_Shortcode_DNS::resolve( 'source.rcs.test', microtime( true ) + 1 ) ) { throw new RuntimeException( 'Failover from a silent resolver failed.' ); }
+	echo "PASS resolver validation and failover from a silent resolver\n";
 	$plugin = RemoteContentShortcode::get_instance(); $address = new ReflectionMethod( $plugin, 'public_address' );
 	foreach ( array( 'source.rcs.test' => '8.8.8.8', 'private.rcs.test' => false, 'mixed-stack.rcs.test' => false, 'aaaa-failure.rcs.test' => false, 'dual-stack.rcs.test' => '8.8.8.8', 'ipv6-only.rcs.test' => false, 'tcp.rcs.test' => '8.8.8.8', 'cname.rcs.test' => '8.8.8.8', 'cname-chain.rcs.test' => '8.8.8.8', 'wrong-id.rcs.test' => false ) as $host => $expected ) {
 		if ( $address->invoke( $plugin, 'http://' . $host . '/', microtime( true ) + 1 ) !== $expected ) { throw new RuntimeException( 'DNS validation failed: ' . $host ); }

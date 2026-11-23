@@ -9,6 +9,9 @@ class Remote_Content_Shortcode_Cache {
 	const MAX_ENTRIES = 32;
 	const MAX_BYTES = 8388608;
 	const FETCH_SLOTS = 'rcs_v3_fetch_slot_';
+	private static $runtime_indexes = array();
+
+	public static function flush_runtime_cache() { self::$runtime_indexes = array(); }
 
 	/** Four fixed slots bound both active work and abandoned admission metadata. */
 	public static function acquire_fetch( $key ) {
@@ -67,25 +70,30 @@ class Remote_Content_Shortcode_Cache {
 	private static function valid_response( $value ) {
 		return is_array( $value ) && isset( $value['body'], $value['url'] ) && is_string( $value['body'] ) && is_string( $value['url'] );
 	}
-	private static function entry( $id ) {
+	private static function entry( $id, $index = null ) {
 		$entry = self::read( $id );
 		if ( ! is_array( $entry ) || ! isset( $entry['fresh_until'], $entry['stale_until'], $entry['value'] ) || ! is_int( $entry['fresh_until'] ) || ! is_int( $entry['stale_until'] ) || ( ! is_wp_error( $entry['value'] ) && ! self::valid_response( $entry['value'] ) ) ) { return false; }
-		// The database remains authoritative when a disconnected object cache returns
-		// with old payloads and old option caches. Tokens distinguish replacement writes.
-		$index = self::index();
+		$index = $index ?? self::entry_index();
 		$meta = $index[ $id ] ?? null;
 		if ( ! is_array( $meta ) || ! is_int( $meta['expires'] ?? null ) || $meta['expires'] <= time() || ( $entry['token'] ?? null ) !== ( $meta['token'] ?? null ) ) { return false; }
 		return $entry;
 	}
+	private static function entry_index() {
+		// A disconnected object cache can return old payloads, even within this request.
+		// Check those against the database on every read; tokens distinguish replacements.
+		if ( wp_using_ext_object_cache() ) { return self::index(); }
+		return self::$runtime_indexes[ get_current_blog_id() ] ??= self::index();
+	}
 	/** The database owns metadata, including when an external cache evicts payloads. */
 	private static function index() {
 		global $wpdb;
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Validity checks and locked mutations must bypass stale option caches across backend changes.
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- Read authoritative metadata independently of the options cache.
 		$raw = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", self::INDEX ) );
 		$index = is_string( $raw ) ? maybe_unserialize( $raw ) : array();
 		return is_array( $index ) ? $index : array();
 	}
 	private static function save_index( $index ) {
+		self::flush_runtime_cache();
 		wp_cache_delete( self::INDEX, 'options' );
 		update_option( self::INDEX, $index, false );
 		return self::index() === $index;
@@ -146,6 +154,7 @@ class Remote_Content_Shortcode_Cache {
 	}
 
 	public static function set( $key, $value, $ttl, $stale_ttl = 0, $tag = '' ) {
+		self::flush_runtime_cache();
 		if ( ! is_wp_error( $value ) && ! self::valid_response( $value ) ) { return false; }
 		if ( is_wp_error( $value ) ) {
 			$code = substr( sanitize_key( (string) $value->get_error_code() ), 0, 80 );
@@ -162,7 +171,7 @@ class Remote_Content_Shortcode_Cache {
 			$now = time();
 			$entry = array( 'value' => $value, 'fresh_until' => $now + $ttl, 'stale_until' => $now + $ttl + max( 0, (int) $stale_ttl ), 'token' => wp_generate_uuid4() );
 			if ( is_wp_error( $value ) ) {
-				$old = self::entry( $id );
+				$old = self::entry( $id, $index );
 				$entry['stale_until'] = 0;
 				if ( is_array( $old ) && isset( $old['stale_until'], $old['value'] ) && $old['stale_until'] > $now ) {
 					$good = isset( $old['good'] ) ? $old['good'] : $old['value'];
@@ -177,7 +186,7 @@ class Remote_Content_Shortcode_Cache {
 			self::remove( $id );
 			unset( $index[ $id ] );
 			while ( count( $index ) >= self::MAX_ENTRIES || array_sum( array_column( $index, 'bytes' ) ) + $bytes > self::MAX_BYTES ) {
-				$oldest = key( $index );
+				$oldest = array_key_first( $index );
 				self::remove( $oldest );
 				unset( $index[ $oldest ] );
 			}
@@ -192,6 +201,7 @@ class Remote_Content_Shortcode_Cache {
 	public static function delete( $key ) { return self::clear_entries( null, self::id( $key ) ); }
 	public static function clear( $tag = null ) { return self::clear_entries( $tag, null ); }
 	private static function clear_entries( $tag, $key ) {
+		self::flush_runtime_cache();
 		$token = self::lock();
 		if ( false === $token ) { return false; }
 		try {
@@ -209,3 +219,10 @@ class Remote_Content_Shortcode_Cache {
 		} finally { self::unlock( $token ); }
 	}
 }
+
+foreach ( array( 'added_option', 'updated_option', 'deleted_option' ) as $cache_option_hook ) {
+	add_action( $cache_option_hook, static function ( $option ) {
+		if ( Remote_Content_Shortcode_Cache::INDEX === $option ) { Remote_Content_Shortcode_Cache::flush_runtime_cache(); }
+	} );
+}
+unset( $cache_option_hook );

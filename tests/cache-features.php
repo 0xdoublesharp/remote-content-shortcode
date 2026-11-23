@@ -40,6 +40,16 @@ foreach ( array( '', '0', 'hello' ) as $body ) {
 	Remote_Content_Shortcode_Cache::set( 'body', rcs_cache_value( $body ), 60 );
 	rcs_cache_assert( rcs_cache_value( $body ) === Remote_Content_Shortcode_Cache::get( 'body' ), 'Valid body was lost.' );
 }
+$index_option = Remote_Content_Shortcode_Cache::INDEX;
+$saved_index = get_option( $index_option );
+update_option( $index_option, array(), false );
+rcs_cache_assert( false === Remote_Content_Shortcode_Cache::get( 'body' ), 'An updated cache index was not visible on read.' );
+update_option( $index_option, $saved_index, false );
+rcs_cache_assert( rcs_cache_value( 'hello' ) === Remote_Content_Shortcode_Cache::get( 'body' ), 'Restored cache metadata was ignored.' );
+delete_option( $index_option );
+rcs_cache_assert( false === Remote_Content_Shortcode_Cache::get( 'body' ), 'A deleted cache index was not visible on read.' );
+add_option( $index_option, $saved_index, '', false );
+rcs_cache_assert( rcs_cache_value( 'hello' ) === Remote_Content_Shortcode_Cache::get( 'body' ), 'Recreated cache metadata was ignored.' );
 Remote_Content_Shortcode_Cache::set( 'error', new WP_Error( 'network', 'secret-message', array( 'token' => 'secret-value' ) ), 60, 60 );
 rcs_cache_assert( is_wp_error( Remote_Content_Shortcode_Cache::get( 'error' ) ), 'Negative cache missing.' );
 rcs_cache_assert( false === Remote_Content_Shortcode_Cache::get( 'error', true ), 'Error served as stale.' );

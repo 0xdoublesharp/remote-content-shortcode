@@ -4,7 +4,7 @@
  * Plugin URI: https://www.doublesharp.com/
  * Description: Embed remote content with a shortcode or block, CSS selectors, persistent caching, and safe HTML output.
  * Author: Justin Silver
- * Version: 2.0
+ * Version: 2.0.0
  * Author URI: https://doublesharp.com/
  * Requires at least: 6.6
  * Requires PHP: 8.2
@@ -89,6 +89,7 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 
 		public function process_shortcodes_in_syntaxhighlighter( $content ) {
 			if ( ! is_string( $content ) || strlen( $content ) > 262144 ) { return ''; }
+			if ( false === stripos( $content, 'remote_content' ) ) { return $content; }
 			$content = preg_replace( '/&#x5B;(?=\/?remote_content(?:[\s\]\/]))/', '[', $content );
 			// Limit this integration to our shortcode, rather than executing every registered shortcode.
 			$pattern = '/(*LIMIT_MATCH=10000)(*LIMIT_DEPTH=128)' . get_shortcode_regex( array( 'remote_content' ) ) . '/s';
@@ -99,7 +100,7 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 
 		public function remote_content_shortcode( $atts, $content = null ) {
 			$start = microtime( true );
-			$this->last_result = array( 'ok' => false, 'error_code' => '', 'http_status' => null, 'cache_status' => 'disabled', 'selector_matches' => null, 'duration_ms' => 0 );
+			$this->last_result = array( 'ok' => false, 'error_code' => '', 'http_status' => null, 'cache_status' => 'disabled', 'selector_matches' => null, 'duration_ms' => 0, 'content_type' => '' );
 			if ( ! Remote_Content_Shortcode_Budget::render() ) { return $this->fail( 'render_budget_exceeded' ); }
 			$fallback = is_array( $atts ) && is_string( $atts['fallback'] ?? null ) ? $atts['fallback'] : '';
 			$atts = $this->normalize_attributes( $atts );
@@ -144,7 +145,7 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 			if ( is_wp_error( $url ) ) { return $url; }
 			$url = $this->canonical_url( $content_filters ? apply_filters( 'remote_content_shortcode_url', $url ) : $url );
 			if ( '' === $url ) { return new WP_Error( 'invalid_url' ); }
-			$content = null === $content && isset( $atts['body'] ) ? $atts['body'] : $content;
+			$content = null === $content || '' === $content ? $atts['body'] : $content;
 			$body = $content_filters ? apply_filters( 'remote_content_shortcode_postfields', $content, $url ) : $content;
 			if ( null !== $body && ! is_string( $body ) ) { return new WP_Error( 'invalid_post_body' ); }
 			if ( strlen( (string) $body ) > self::MAX_BYTES ) { return new WP_Error( 'post_body_too_large' ); }
@@ -160,7 +161,7 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 
 		/** Render a previously verified response through the same bounded output pipeline. */
 		public function render_fetched( $response, $attributes ) {
-			$this->last_result = array( 'ok' => false, 'error_code' => '', 'http_status' => null, 'cache_status' => 'snapshot', 'selector_matches' => null, 'duration_ms' => 0 );
+			$this->last_result = array( 'ok' => false, 'error_code' => '', 'http_status' => null, 'cache_status' => 'snapshot', 'selector_matches' => null, 'duration_ms' => 0, 'content_type' => '' );
 			if ( ! Remote_Content_Shortcode_Budget::render() ) { return $this->fail( 'render_budget_exceeded' ); }
 			$atts = $this->normalize_attributes( $attributes );
 			if ( is_wp_error( $atts ) ) { return $this->fail( $atts ); }
@@ -203,6 +204,7 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 			}
 			// A stored POST is replayed by previews, public visits and REST. Only trusted code can grant repeat-safe rendering.
 			if ( 'POST' === $method && true !== apply_filters( 'remote_content_shortcode_allow_post_render', false, $url, (string) $atts['userpwd'] ) ) { return $this->fail( 'post_render_not_allowed', $url ); }
+			if ( 'POST' === $method && ( null === $content || '' === $content ) && '' !== $atts['body'] ) { $content = $atts['body']; }
 			$body = apply_filters( 'remote_content_shortcode_postfields', $content, $url );
 			if ( null !== $body && ! is_string( $body ) ) {
 				return $this->fail( 'invalid_post_body', $url );
@@ -252,6 +254,7 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 		private function transform_response( $response, $atts, $url ) {
 			$effective_url = $response['url'];
 			if ( 'stale' !== $this->last_result['cache_status'] ) { $this->last_result['http_status'] = $response['status'] ?? 200; }
+			$this->last_result['content_type'] = $this->media_type( $response['content_type'] ?? '' );
 			$response = $response['body'];
 			if ( $atts['selector'] || $atts['remove'] ) {
 				$response = apply_filters( 'remote_content_shortcode_phpQuery', $response, $url, $atts['selector'], $atts['remove'] );
@@ -355,10 +358,11 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 			}
 			// Decimal, octal and hexadecimal IP aliases must not be treated as DNS names.
 			if ( preg_match( '/^(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+)){0,3}$/iD', $host ) ) { return false; }
+			if ( ! Remote_Content_Shortcode_DNS::is_hostname( $host ) ) { return false; }
 			// WordPress allows some same-site/private-host exceptions. This shortcode does not.
 			$addresses = Remote_Content_Shortcode_DNS::resolve( $host, $deadline ?? microtime( true ) + 10 );
-			if ( false === $addresses || ! $addresses ) {
-				return false;
+			if ( ! $addresses ) {
+				return Remote_Content_Shortcode_DNS::has_resolvers() ? false : new WP_Error( 'dns_unavailable' );
 			}
 			foreach ( $addresses as $address ) {
 				if ( ! filter_var( $address, FILTER_VALIDATE_IP, FILTER_FLAG_GLOBAL_RANGE ) ) {
@@ -377,8 +381,15 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 			if ( false === $lease ) { return new WP_Error( 'request_busy' ); }
 			try {
 				// Recheck after acquiring admission; a prior owner may have just committed the response.
-				$response = is_array( $cache ) ? Remote_Content_Shortcode_Cache::get( $cache[0] ) : false;
-				if ( false === $response ) { $response = $this->request_until( $url, $args, $deadline ); }
+				if ( is_array( $cache ) ) {
+					Remote_Content_Shortcode_Cache::flush_runtime_cache();
+					$response = Remote_Content_Shortcode_Cache::get( $cache[0] );
+					if ( false !== $response ) {
+						$this->last_result['cache_status'] = 'hit';
+						return $response;
+					}
+				}
+				$response = $this->request_until( $url, $args, $deadline );
 				if ( is_array( $cache ) ) { Remote_Content_Shortcode_Cache::set( $cache[0], $response, is_wp_error( $response ) ? min( 60, $cache[1] ) : $cache[1], $cache[2], hash( 'sha256', $url ) ); }
 				return $response;
 			} finally { Remote_Content_Shortcode_Cache::release_fetch( $lease ); }
@@ -390,6 +401,7 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 				$url = $this->canonical_url( $url );
 				$address = $this->public_address( $url, $deadline );
 				if ( microtime( true ) >= $deadline ) { return new WP_Error( 'request_timeout' ); }
+				if ( is_wp_error( $address ) ) { return $address; }
 				if ( ! $address ) {
 					return new WP_Error( 'invalid_url' );
 				}
@@ -423,8 +435,16 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 				if ( strlen( $body ) >= self::MAX_BYTES ) {
 					return new WP_Error( 'response_too_large' );
 				}
-				return array( 'body' => $body, 'url' => $url, 'status' => $status );
+				$content_type = $this->media_type( wp_remote_retrieve_header( $response, 'content-type' ) );
+				$this->last_result['content_type'] = $content_type;
+				return array( 'body' => $body, 'url' => $url, 'status' => $status, 'content_type' => $content_type );
 			}
+		}
+
+		private function media_type( $header ) {
+			if ( ! is_string( $header ) ) { return ''; }
+			$type = strtolower( trim( explode( ';', $header, 2 )[0] ) );
+			return strlen( $type ) <= 64 && preg_match( '/^[a-z0-9][a-z0-9!#$&^_.+-]*\/[a-z0-9][a-z0-9!#$&^_.+-]*$/D', $type ) ? $type : '';
 		}
 
 		private function pinned_request( $url, $args, $address, $deadline ) {
@@ -476,11 +496,17 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 				if ( $request_url !== $url ) {
 					throw new WpOrg\Requests\Exception( 'Request URL changed.', 'remote_content_url_changed' );
 				}
-				$headers = substr( $raw, 0, strpos( $raw, "\r\n\r\n" ) ?: 0 );
-				if ( preg_match( '/(?:^|\n)content-encoding\s*:/i', $headers ) ) {
-					// Requests otherwise inflates compressed bodies before their size can be checked.
-					throw new WpOrg\Requests\Exception( 'Encoded responses are not supported.', 'remote_content_encoded_response' );
-				}
+				$end = strpos( $raw, "\r\n\r\n" );
+				if ( false === $end ) { return; }
+				$headers = substr( $raw, 0, $end );
+				$headers = preg_replace_callback( '/\r?\n[ \t]*content-encoding[ \t]*:([^\r\n]*(?:\r?\n[ \t]+[^\r\n]*)*)/i', static function ( $match ) {
+					if ( 0 !== strcasecmp( trim( $match[1], " \t\r\n" ), 'identity' ) ) {
+						throw new WpOrg\Requests\Exception( 'Encoded responses are not supported.', 'remote_content_encoded_response' );
+					}
+					// Requests sniffs the body for compression whenever this header is present.
+					return '';
+				}, $headers );
+				$raw = $headers . substr( $raw, $end );
 			};
 			$check_peer = static function ( &$headers, $info = array() ) use ( $address ) {
 				if ( empty( $info['primary_ip'] ) || inet_pton( $info['primary_ip'] ) !== inet_pton( $address ) ) {
@@ -539,7 +565,7 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 			$error = is_wp_error( $error ) ? $error : new WP_Error( $error );
 			$code = $error->get_error_code();
 			$known = array( 'invalid_attributes', 'invalid_fallback', 'invalid_method', 'invalid_url', 'invalid_query_parameter', 'invalid_post_body', 'post_body_too_large', 'unconfigured_credentials', 'credential_origin_mismatch', 'credential_endpoint_mismatch', 'invalid_credentials', 'invalid_html_input', 'html_too_complex', 'selector_too_complex', 'invalid_selector', 'selector_no_matches', 'invalid_regex', 'invalid_output', 'request_timeout', 'redirect_not_allowed', 'invalid_redirect', 'http_status_error', 'response_too_large', 'http_request_failed', 'proxy_not_supported', 'transport_not_pinned', 'html_too_large', 'invalid_html', 'invalid_url_base', 'output_too_large', 'regex_input_too_complex', 'regex_output_too_large' );
-			$known = array_merge( $known, array( 'render_budget_exceeded', 'request_budget_exceeded', 'request_busy', 'post_render_not_allowed' ) );
+			$known = array_merge( $known, array( 'render_budget_exceeded', 'request_budget_exceeded', 'request_busy', 'post_render_not_allowed', 'dns_unavailable', 'secret_unavailable' ) );
 			$this->last_result['error_code'] = in_array( $code, $known, true ) ? $code : 'request_failed';
 			/** Diagnostic listeners receive details; visitors receive no internal error text. */
 			do_action( 'remote_content_shortcode_error', $error, $url );

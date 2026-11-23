@@ -24,6 +24,32 @@ $cases['POST rendering requires a server-side grant'] = static function () use (
 		ah_assert( 200 === $reply->get_status() && 0 === $requests, 'Anonymous REST rendering replayed an ungranted POST.' );
 	} finally { wp_delete_post( $id, true ); }
 };
+$cases['granted POST uses the body attribute and reports a sanitized media type'] = static function () use ( $plugin ) {
+	$grant = static fn() => true;
+	$bodies = array();
+	$reply = static function ( $pre, $args ) use ( &$bodies ) {
+		$bodies[] = $args['body'];
+		return array( 'headers' => array( 'content-type' => ' Application/JSON ; charset=UTF-8' ), 'body' => '{}', 'response' => array( 'code' => 200 ) );
+	};
+	$old_user = get_current_user_id();
+	wp_set_current_user( 1 );
+	add_filter( 'remote_content_shortcode_allow_post_render', $grant );
+	add_filter( 'pre_http_request', $reply, 20, 2 );
+	try {
+		$atts = array( 'url' => 'https://8.8.8.8/content', 'method' => 'POST', 'body' => 'foo=bar' );
+		$result = $plugin->diagnose( $atts );
+		ah_assert( $result['ok'] && 'application/json' === $result['content_type'], 'Diagnostics lost the media type or exposed parameters.' );
+		ah_assert( '{}' === $plugin->remote_content_shortcode( $atts, '' ), 'Empty enclosed body failed to render.' );
+		ah_assert( '{}' === $plugin->remote_content_shortcode( $atts, 'enclosed' ), 'Enclosed body failed to render.' );
+		$source = $plugin->fetch_source( $atts );
+		ah_assert( 'application/json' === $source['content_type'], 'Fetched source lost the media type.' );
+		ah_assert( array( 'foo=bar', 'foo=bar', 'enclosed', 'foo=bar' ) === $bodies, 'POST body fallback ignored the attribute or overrode enclosed content.' );
+	} finally {
+		remove_filter( 'pre_http_request', $reply, 20 );
+		remove_filter( 'remote_content_shortcode_allow_post_render', $grant );
+		wp_set_current_user( $old_user );
+	}
+};
 $cases['remote styling and subresources are inert by default'] = static function () use ( &$body ) {
 	$body = '<div id="overlay" class="overlay" style="position:fixed;top:0;z-index:99999"><img src="/marker" srcset="http://127.0.0.1/a 1x"><video poster="https://8.8.8.8/p"></video>Text</div>';
 	$html = ah_render();
@@ -50,6 +76,19 @@ $cases['render count and aggregate output are bounded on cache hits'] = static f
 	for ( $i = 0; $i < 32; ++$i ) { ah_assert( '' !== ah_render( array( 'url' => 'https://8.8.8.8/count', 'cache' => 'true' ) ), 'Render count rejected an in-budget fragment.' ); }
 	ah_assert( '' === ah_render( array( 'url' => 'https://8.8.8.8/count', 'cache' => 'true' ) ), 'Render count was unbounded.' );
 };
+$cases['a post-lease cache hit preserves its expiry and is recorded as a hit'] = static function () use ( $plugin, &$requests ) {
+	$key = 'post-lease-hit';
+	$url = 'https://8.8.8.8/content';
+	$value = array( 'body' => 'prepared by another request', 'url' => $url );
+	ah_assert( Remote_Content_Shortcode_Cache::set( $key, $value, 60 ), 'Could not prepare the cached response.' );
+	$index = get_option( Remote_Content_Shortcode_Cache::INDEX );
+	$request = new ReflectionMethod( $plugin, 'request' );
+	$status = new ReflectionProperty( $plugin, 'last_result' );
+	$response = $request->invoke( $plugin, $url, array( 'method' => 'GET', 'timeout' => 1 ), array( $key, 3600, 0 ) );
+	ah_assert( $value === $response && 0 === $requests, 'Cached response reached HTTP.' );
+	ah_assert( $index === get_option( Remote_Content_Shortcode_Cache::INDEX ), 'Cache hit wrote a new token or expiry.' );
+	ah_assert( 'hit' === $status->getValue( $plugin )['cache_status'], 'Cache hit was recorded as a miss.' );
+};
 $cases['outbound request count is bounded independently of output'] = static function () use ( &$requests ) {
 	for ( $i = 0; $i < 8; ++$i ) { ah_assert( '' !== ah_render(), 'An in-budget fetch was rejected.' ); }
 	ah_assert( '' === ah_render() && 8 === $requests, 'Ninth outbound fetch was admitted.' );
@@ -73,7 +112,8 @@ $cases['SyntaxHighlighter limits callbacks and preserves unrelated delimiters'] 
 	try {
 		$html = $plugin->process_shortcodes_in_syntaxhighlighter( str_repeat( '&#x5B;remote_content url="file:///inert"]', 5 ) );
 		ah_assert( '' === $html && 4 === $count, 'Compatibility integration exceeded its callback budget.' );
-		ah_assert( '[unrelated]' !== $plugin->process_shortcodes_in_syntaxhighlighter( '&#x5B;unrelated]' ), 'Unrelated delimiter was decoded.' );
+		$unrelated = '<custom-element>&#x5B;unrelated]</custom-element>';
+		ah_assert( $unrelated === $plugin->process_shortcodes_in_syntaxhighlighter( $unrelated ), 'Unrelated highlighter markup was changed.' );
 	} finally { remove_filter( 'pre_do_shortcode_tag', $observe ); }
 };
 $cases['regex uses its own match budget and preserves ambient settings'] = static function () {

@@ -2,6 +2,8 @@
 /** Tiny numeric-address DNS fixture; run only inside the isolated audit namespace. */
 $socket = stream_socket_server( 'udp://127.0.0.1:53', $errno, $error, STREAM_SERVER_BIND );
 if ( ! $socket ) { throw new RuntimeException( 'DNS fixture bind failed.' ); }
+$silent = stream_socket_server( 'udp://[::1]:53', $errno, $error, STREAM_SERVER_BIND );
+if ( ! $silent ) { throw new RuntimeException( 'Silent DNS fixture bind failed.' ); }
 $tcp = stream_socket_server( 'tcp://127.0.0.1:53', $errno, $error );
 if ( ! $tcp ) { throw new RuntimeException( 'TCP DNS fixture bind failed.' ); }
 stream_set_timeout( $socket, 8 ); echo "READY\n"; fflush( STDOUT );
@@ -39,4 +41,4 @@ for ( $request = 0; $request < 512; ++$request ) {
 	if ( $client ) { fwrite( $client, pack( 'n', strlen( $packet ) ) . $packet ); fclose( $client ); }
 	else { stream_socket_sendto( $socket, $packet, 0, $peer ); }
 }
-fclose( $socket ); fclose( $tcp );
+fclose( $socket ); fclose( $tcp ); fclose( $silent );

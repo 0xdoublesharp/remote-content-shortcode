@@ -3,19 +3,35 @@
 if ( ! defined( 'ABSPATH' ) ) { exit; }
 
 class Remote_Content_Shortcode_DNS {
+	public static function is_hostname( $host ) {
+		return is_string( $host ) && strlen( $host ) <= 253 && 1 === preg_match( '/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.?$/iD', $host );
+	}
+
+	public static function has_resolvers() { return ! empty( self::servers() ); }
+
 	public static function resolve( $host, $deadline ) {
-		if ( ! is_string( $host ) || strlen( $host ) > 253 || ! preg_match( '/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.?$/iD', $host ) ) { return false; }
-		$servers = defined( 'REMOTE_CONTENT_DNS_SERVERS' ) ? REMOTE_CONTENT_DNS_SERVERS : self::servers();
-		if ( ! is_array( $servers ) || ! $servers || count( $servers ) > 3 ) { return false; }
-		foreach ( $servers as $server ) { if ( ! is_string( $server ) || ! filter_var( $server, FILTER_VALIDATE_IP ) ) { return false; } }
+		if ( ! self::is_hostname( $host ) ) { return false; }
+		$servers = self::servers();
+		if ( ! $servers ) { return false; }
 		$addresses = array();
 		foreach ( array( 1, 28 ) as $type ) {
 			$name = strtolower( rtrim( $host, '.' ) );
 			for ( $depth = 0; $depth < 8; ++$depth ) {
 				$result = false;
-				foreach ( $servers as $server ) {
-					$result = self::query( $name, $type, $server, $deadline );
-					if ( false !== $result ) { break; }
+				foreach ( $servers as $index => $server ) {
+					$now = microtime( true );
+					if ( $now >= $deadline ) { return false; }
+					$remaining_servers = count( $servers ) - $index;
+					$attempt_deadline = $remaining_servers > 1 ? $now + min( 2.5, ( $deadline - $now ) / $remaining_servers ) : $deadline;
+					$result = self::query( $name, $type, $server, $attempt_deadline );
+					if ( false !== $result ) {
+						// Prefer the responding resolver for the next record type or CNAME hop.
+						if ( $index ) {
+							unset( $servers[ $index ] );
+							array_unshift( $servers, $server );
+						}
+						break;
+					}
 				}
 				if ( false === $result ) { return false; }
 				$seen = array();
@@ -36,17 +52,31 @@ class Remote_Content_Shortcode_DNS {
 	}
 
 	private static function servers() {
+		if ( defined( 'REMOTE_CONTENT_DNS_SERVERS' ) ) {
+			$servers = REMOTE_CONTENT_DNS_SERVERS;
+			if ( ! is_array( $servers ) || count( $servers ) > 3 ) { return array(); }
+			foreach ( $servers as $server ) {
+				if ( ! is_string( $server ) || ! filter_var( $server, FILTER_VALIDATE_IP ) ) { return array(); }
+			}
+			return array_values( $servers );
+		}
 		// This administrator-owned file supplies numeric resolver addresses, never target URLs.
 		$config = @file_get_contents( '/etc/resolv.conf', false, null, 0, 4096 );
-		preg_match_all( '/^\s*nameserver\s+(\S+)/m', (string) $config, $matches );
-		return array_slice( $matches[1], 0, 3 );
+		return self::parse_resolv_conf( (string) $config );
+	}
+
+	private static function parse_resolv_conf( $config ) {
+		preg_match_all( '/^[ \t]*nameserver[ \t]+([^ \t\r\n#;]+)[ \t]*(?:[#;][^\r\n]*)?\r?$/m', $config, $matches );
+		$servers = array_filter( $matches[1], static fn( $ip ) => false !== filter_var( $ip, FILTER_VALIDATE_IP ) );
+		return array_slice( $servers, 0, 3 );
 	}
 
 	private static function wait( $socket, $deadline, $write = false ) {
 		$remaining = $deadline - microtime( true );
 		if ( $remaining <= 0 ) { return false; }
 		$read = $write ? array() : array( $socket ); $writes = $write ? array( $socket ) : array(); $except = array();
-		return 1 === @stream_select( $read, $writes, $except, (int) $remaining, (int) ( ( $remaining - (int) $remaining ) * 1000000 ) );
+		$microseconds = (int) ceil( $remaining * 1000000 );
+		return 1 === @stream_select( $read, $writes, $except, intdiv( $microseconds, 1000000 ), $microseconds % 1000000 );
 	}
 
 	private static function exchange( $server, $packet, $deadline, $tcp ) {
