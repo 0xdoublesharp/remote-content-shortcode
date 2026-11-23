@@ -37,7 +37,7 @@ notes.write_text(
     f'Download **{archive.name}** and upload it through WordPress Plugins > Add New > Upload Plugin. '
     'The matching `.sha256` file verifies the download.\n\n'
     'WordPress.org directory availability and update distribution depend on WordPress review and release confirmation.\n\n'
-    'See [upgrading from 1.x](https://github.com/doublesharp/remote-content-shortcode/blob/' + args.tag + '/docs/upgrading.md) '
+    'See [upgrading from 1.x](https://github.com/0xdoublesharp/remote-content-shortcode/blob/' + args.tag + '/docs/upgrading.md) '
     'before updating an existing installation.\n\n' + match[1].strip() + '\n'
 )
 print('Verified ZIP checksum and prepared version-specific release notes.')
