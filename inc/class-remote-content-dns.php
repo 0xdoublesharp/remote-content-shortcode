@@ -90,15 +90,21 @@ class Remote_Content_Shortcode_DNS {
 			$wire = $tcp ? pack( 'n', strlen( $packet ) ) . $packet : $packet;
 			while ( '' !== $wire ) {
 				if ( ! self::wait( $socket, $deadline, true ) ) { return false; }
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fwrite -- Send the DNS query over an open network socket.
 				$sent = @fwrite( $socket, $wire );
 				if ( ! $sent ) { return false; }
 				$wire = substr( $wire, $sent );
 			}
 			if ( ! self::wait( $socket, $deadline ) ) { return false; }
-			if ( ! $tcp ) { $raw = @fread( $socket, 16385 ); return is_string( $raw ) && strlen( $raw ) <= 16384 ? $raw : false; }
+			if ( ! $tcp ) {
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fread -- Read one bounded UDP response from the DNS socket.
+				$raw = @fread( $socket, 16385 );
+				return is_string( $raw ) && strlen( $raw ) <= 16384 ? $raw : false;
+			}
 			$raw = ''; $needed = 2;
 			while ( strlen( $raw ) < $needed ) {
 				if ( ! self::wait( $socket, $deadline ) ) { return false; }
+				// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fread -- Read a bounded chunk from the TCP DNS socket.
 				$piece = @fread( $socket, $needed - strlen( $raw ) );
 				if ( ! is_string( $piece ) || '' === $piece ) { return false; }
 				$raw .= $piece;
@@ -108,7 +114,10 @@ class Remote_Content_Shortcode_DNS {
 				}
 			}
 			return substr( $raw, 2 );
-		} finally { fclose( $socket ); }
+		} finally {
+			// phpcs:ignore WordPress.WP.AlternativeFunctions.file_system_operations_fclose -- Close the DNS socket on success or failure.
+			fclose( $socket );
+		}
 	}
 
 	private static function name( $raw, &$offset ) {

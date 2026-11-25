@@ -2,7 +2,7 @@
 Contributors: doublesharp
 Tags: shortcode, content, import, scraper, remote
 Requires at least: 6.6
-Tested up to: 7.1
+Tested up to: 7.2
 Requires PHP: 8.2
 Stable tag: 2.0.0
 License: GPLv2 or later
@@ -127,19 +127,9 @@ The installed plugin includes `docs/security.md` with the full security and comp
 
 = Developer hooks =
 
-The existing `remote_content_shortcode_url`, `remote_content_shortcode_postfields`, `remote_content_shortcode_phpQuery`, and `remote_content_shortcode_return` filters remain available. The phpQuery-named hook is a compatibility hook for the HTML string before selection; it no longer uses phpQuery. Return-filter output is always sanitized afterward.
+See the [integration reference](https://github.com/0xdoublesharp/remote-content-shortcode/blob/main/docs/integrations.md) for PHP fetch and render APIs, credential providers, administrator tabs, and transformation hooks. The reference is also included in the installed plugin at `docs/integrations.md`.
 
-`remote_content_shortcode_credentials` configures credential aliases. The `remote_content_shortcode_error` action receives a WP_Error and the requested URL for server-side diagnostics. Diagnostic listeners must protect any sensitive data in URLs and must not print raw errors to visitors.
-
-`remote_content_shortcode_allow_post_render` must return exactly `true` for a repeat-safe POST destination and alias used in a render. The `remote_content_shortcode_resource_origins` filter receives the allowed origins and final source URL and can grant browser access to exact public HTTPS origins.
-
-`remote_content_shortcode_admin_tabs` extends the administrator tab map, and `remote_content_shortcode_admin_tab_SLUG` renders an extension tab after the screen's administrator check. Extension actions remain responsible for their own POST nonce and permission checks. Labels are escaped and tab slugs accept only a leading lowercase letter followed by lowercase letters, digits, underscores or hyphens, up to 64 characters.
-
-`RemoteContentShortcode::get_instance()->fetch_source($attributes, $content = null, $content_filters = true)` fetches an uncached response with the core destination, credential, DNS pinning, TLS and size rules. It returns an array with body, final url and status, or WP_Error. Set content_filters to false for a stored source that must ignore request-context query forwarding and the URL/POST-body content filters. `render_fetched($response, $attributes)` transforms a previously verified response through the same selectors, replacements and final HTML sanitization without fetching it again. Raw fetch results are not safe HTML. See docs/integrations.md for examples and provider credentials.
-
-The former SSL verification filters and the local draft's `REMOTE_CONTENT_ALLOW_ALL_URLS` and `REMOTE_CONTENT_ALLOW_PRIVATE_IPS` constants are not supported. TLS verification and public-destination restrictions cannot be disabled through this plugin.
-
-The SyntaxHighlighter integration processes only remote_content shortcodes and sanitizes the resulting HTML.
+Final output always passes through WordPress HTML sanitization. The SyntaxHighlighter integration processes only `remote_content` shortcodes. TLS verification and public-destination checks are mandatory. The former SSL verification filters and the `REMOTE_CONTENT_ALLOW_ALL_URLS` and `REMOTE_CONTENT_ALLOW_PRIVATE_IPS` constants are unsupported.
 
 == Installation ==
 

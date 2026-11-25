@@ -324,10 +324,30 @@ rcs_case( 'authenticated redirects are refused', function () {
 	rcs_assert( '' === rcs_render( array( 'userpwd' => 'api' ) ) && 1 === count( $GLOBALS['rcs_requests'] ) && 0 === $GLOBALS['rcs_requests'][0]['args']['redirection'], 'authenticated redirect was allowed' );
 } );
 rcs_case( 'SyntaxHighlighter integration does not execute unrelated shortcodes', function () {
-	add_shortcode( 'rcs_unrelated', fn() => 'executed' );
-	$out = apply_filters( 'syntaxhighlighter_htmlresult', '&#x5B;rcs_unrelated]' );
-	rcs_assert( ! str_contains( $out, 'executed' ), 'unrelated shortcode executed' );
-	remove_shortcode( 'rcs_unrelated' );
+	$body = '<span title="[rcs_unrelated]">Body</span>';
+	$unrelated_calls = 0;
+	$received = array();
+	$filter = static function ( $output, $tag ) {
+		return 'remote_content' === $tag ? '<b>' . $output . '</b>' : $output;
+	};
+	add_shortcode( 'rcs_unrelated', static function () use ( &$unrelated_calls ) { ++$unrelated_calls; return 'executed'; } );
+	add_shortcode( 'remote_content', static function ( $atts, $content, $tag ) use ( &$received ) {
+		$received[] = array( $atts, $content, $tag );
+		return 'Rendered';
+	} );
+	add_filter( 'do_shortcode_tag', $filter, 10, 2 );
+	try {
+		$input = '&#x5B;rcs_unrelated] &#x5B;remote_content method="POST"]' . $body . '[/remote_content]';
+		$out = apply_filters( 'syntaxhighlighter_htmlresult', $input );
+		rcs_assert( wp_kses_post( '&#x5B;rcs_unrelated] <b>Rendered</b>' ) === $out, 'highlighter output or output filter changed' );
+		rcs_assert( '[remote_content]' === apply_filters( 'syntaxhighlighter_htmlresult', '[[remote_content]]' ), 'escaped shortcode was not preserved' );
+		rcs_assert( array( array( array( 'method' => 'POST' ), $body, 'remote_content' ) ) === $received, 'registered callback did not receive the original shortcode attributes and body' );
+		rcs_assert( 0 === $unrelated_calls, 'unrelated shortcode executed' );
+	} finally {
+		remove_filter( 'do_shortcode_tag', $filter, 10 );
+		remove_shortcode( 'rcs_unrelated' );
+		RemoteContentShortcode::get_instance()->add_shortcode();
+	}
 } );
 
 delete_option( 'rcs_test_secret' );

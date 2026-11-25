@@ -94,7 +94,20 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 			// Limit this integration to our shortcode, rather than executing every registered shortcode.
 			$pattern = '/(*LIMIT_MATCH=10000)(*LIMIT_DEPTH=128)' . get_shortcode_regex( array( 'remote_content' ) ) . '/s';
 			$count = 0;
-			$result = preg_replace_callback( $pattern, static function ( $match ) use ( &$count ) { return ++$count <= 4 ? do_shortcode_tag( $match ) : ''; }, $content, 5 );
+			$result = preg_replace_callback( $pattern, static function ( $match ) use ( &$count ) {
+				if ( ++$count > 4 ) { return ''; }
+				if ( '[' === $match[1] && ']' === $match[6] ) { return substr( $match[0], 1, -1 ); }
+				global $shortcode_tags;
+				$tag = $match[2];
+				if ( ! is_callable( $shortcode_tags[ $tag ] ?? null ) ) { return $match[0]; }
+				$atts = shortcode_parse_atts( $match[3] );
+				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Preserve the core shortcode pre-render filter.
+				$output = apply_filters( 'pre_do_shortcode_tag', false, $tag, $atts, $match );
+				if ( false !== $output ) { return $output; }
+				$output = $match[1] . call_user_func( $shortcode_tags[ $tag ], $atts, $match[5] ?? null, $tag ) . $match[6];
+				// phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- Preserve the core shortcode output filter.
+				return apply_filters( 'do_shortcode_tag', $output, $tag, $atts, $match );
+			}, $content, 5 );
 			return is_string( $result ) && $count <= 4 && strlen( $result ) <= self::MAX_BYTES ? wp_kses_post( $result ) : '';
 		}
 
@@ -309,17 +322,15 @@ if ( ! class_exists( 'RemoteContentShortcode' ) ) {
 				}
 				$encoded_key = rawurlencode( $key );
 				if ( array_key_exists( $encoded_key, $query ) ) { continue; }
-				// Only explicitly named query-string values are forwarded. Cookies and POST data are excluded.
-				// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- Read-only forwarding of public query parameters.
-				if ( isset( $_GET[ $key ] ) ) {
-					// phpcs:ignore WordPress.Security.NonceVerification.Recommended,WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- Values are validated as strings, then URL-encoded by add_query_arg.
-					if ( ! is_string( $_GET[ $key ] ) || strlen( $_GET[ $key ] ) > 4096 ) {
+				// phpcs:ignore WordPress.Security.NonceVerification.Recommended, WordPress.Security.ValidatedSanitizedInput.InputNotSanitized, WordPress.Security.ValidatedSanitizedInput.MissingUnslash -- Check this public read-only input's type and size before unslashing and URL encoding.
+				$value = $_GET[ $key ] ?? null;
+				if ( null !== $value ) {
+					if ( ! is_string( $value ) || strlen( $value ) > 4096 ) {
 						return new WP_Error( 'invalid_query_parameter' );
 					}
-					$value = wp_unslash( $_GET[ $key ] );
-					$query[ $encoded_key ] = rawurlencode( $value );
+					$query[ $encoded_key ] = rawurlencode( wp_unslash( $value ) );
 				} elseif ( isset( $parts[1] ) ) {
-					$query[ rawurlencode( $key ) ] = rawurlencode( trim( $parts[1] ) );
+					$query[ $encoded_key ] = rawurlencode( trim( $parts[1] ) );
 				}
 			}
 			return $query ? add_query_arg( $query, $url ) : $url;
